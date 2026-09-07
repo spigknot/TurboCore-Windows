@@ -17,6 +17,8 @@ from turbocore.pdh import FreqMonitor, aggregate_cores, format_core_row
 UPDATE_GREEN = "#16833a"
 UPDATE_GREEN_ACTIVE = "#116b30"
 UPDATE_GREEN_DISABLED = "#7ea98a"
+UPDATE_FG_DISABLED = "#f1f4f2"
+UPDATE_LABEL = "Atualizar"
 REFRESH_MS = 1000
 
 
@@ -198,10 +200,17 @@ def open_panel(state: dict):
     _window_icon(root)
 
     style = ttk.Style(root)
+    try:
+        # Igual ao SIG: sem o clam, o tema "vista" do Windows ignora o
+        # background/foreground do TButton e o botão sai esbranquiçado.
+        style.theme_use("clam")
+    except Exception:
+        pass
     style.configure("Update.TButton", foreground="#ffffff", background=UPDATE_GREEN,
                     font=("Segoe UI Semibold", 10), padding=(12, 4))
     style.map("Update.TButton", background=[("active", UPDATE_GREEN_ACTIVE),
-                                            ("disabled", UPDATE_GREEN_DISABLED)])
+                                            ("disabled", UPDATE_GREEN_DISABLED)],
+              foreground=[("disabled", UPDATE_FG_DISABLED)])
 
     # Linha 1: Núcleos (esquerda) + update verde (direita, oculto sem novidade).
     top = tk.Frame(root)
@@ -226,7 +235,7 @@ def open_panel(state: dict):
     update_button.pack_forget()
 
     def show_update(version: str) -> None:
-        update_button.configure(text=f"Atualizar para {version}")
+        update_button.configure(text=UPDATE_LABEL)
         update_button.pack(side="right")
 
     def on_update_click():

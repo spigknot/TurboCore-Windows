@@ -9,6 +9,11 @@ def test_verde_igual_sig():
     assert panel.UPDATE_GREEN_ACTIVE == "#116b30"
 
 
+def test_botao_update_clones_sig():
+    assert panel.UPDATE_LABEL == "Atualizar"
+    assert panel.UPDATE_FG_DISABLED == "#f1f4f2"
+
+
 def test_sobre_traz_versao_atual():
     from turbocore import __version__
     title, subtitle, version_line = panel.sobre_texts()

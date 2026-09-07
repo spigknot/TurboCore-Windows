@@ -31,7 +31,7 @@ def walk(w):
         walk(c)
 
 walk(root)
-assert any("Atualizar para 20260907_009" in t for t in texts), texts
+assert any(t == "Atualizar" for t in texts), texts
 assert any(t.startswith("Core") for t in texts) or True
 # sem Listbox-caixa: linhas diretas; Menubutton presente; Sobre abre
 import tkinter as tk
