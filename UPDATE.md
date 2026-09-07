@@ -65,8 +65,11 @@ powershell.exe -NoProfile -Command "Get-Process TurboCore,TurboCoreUpdater -Erro
 ```bash
 C:/Users/Gustavo/AppData/Local/Programs/Python/Python311/python.exe scripts/tc_release.py bump --version YYYYMMDD_NNN
 C:/Users/Gustavo/AppData/Local/Programs/Python/Python311/python.exe scripts/tc_release.py preflight
-# esperado: "82 passed" (o número cresce) + "PASS: preflight (pytest)"
+# esperado: "115 passed" (o número cresce) + "PASS: preflight (pytest)"
 ```
+
+O preflight roda primeiro um gate barato de sintaxe (`compileall` em
+`src/updater/installer/scripts`, fail-fast) e depois a suíte + gate do updater.
 
 ## 3. Build (package + full.zip + instaladores)
 
@@ -167,6 +170,9 @@ Se QUALQUER passo divergir, atualize este arquivo no mesmo commit da versão.
 | `Permission denied` no lock (updater) | instalação sem `users-modify` (cópia manual) | reinstalar pelo setup; mensagem orienta (sem runas — igual ao SIG) |
 | Console preta piscando (app) | `subprocess` sem `CREATE_NO_WINDOW` | flag em todo spawn (power.py, cpu_info.py, pdh.py) |
 | Monitor zerado/viciado | `ProcessorFrequency` é o nominal fixo | ler `ActualFrequency` + `PercentIdleTime` (WMI) |
+| `RequestTimeTooSkewed` no sync | relógio do Windows dessincronizado (>15 min) | `powershell -c "Start-Service w32time; w32tm /resync"` (elevado); conferir `date -u` |
+| `SignatureDoesNotMatch` no sync | par S3 errado/antigo ou de outro bucket | gerar novo token S3 p/ `turbocore-windows`, trocar o par local; nunca usar token da API como credencial |
+| Tag da release aponta p/ commit anterior | `gh release create` antes do commit/push | ordem §5 antes de §6; se ocorrer: `git push origin +<COMMIT>:refs/tags/<VERSAO>` |
 | Painel travando | leitura WMI (~1s) na thread da UI | thread leitora + fila, UI só drena |
 | Release parcial/draft no GitHub | assets junto do `create` + timeout | metadados primeiro, uploads separados |
 | `401/503` transitórios (R2/GitHub) | rede/API | repetir e conferir depois; nunca confiar em data, conferir SHA/nomes |

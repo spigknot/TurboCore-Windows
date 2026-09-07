@@ -167,6 +167,11 @@ def build_installer_online(version: str) -> pathlib.Path:
 def preflight() -> None:
     env = dict(os.environ)
     env["PYTHONPATH"] = str(ROOT / "src") + os.pathsep + env.get("PYTHONPATH", "")
+    syntax = subprocess.run(
+        [sys.executable, "-m", "compileall", "-q", "src", "updater", "installer", "scripts"],
+        cwd=str(ROOT), env=env)
+    if syntax.returncode != 0:
+        raise SystemExit("preflight: erro de sintaxe")
     proc = subprocess.run([sys.executable, "-m", "pytest", "tests/", "-q"],
                           cwd=str(ROOT), env=env)
     if proc.returncode != 0:
