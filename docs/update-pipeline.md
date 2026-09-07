@@ -28,8 +28,7 @@ R2 turbocore-windows/
   build-info.json            {"version": "YYYYMMDD_NNN", ...}
   TurboCore.exe
   TurboCoreUpdater.exe
-  assets/chip.ico, assets/chip.png
-  _internal/...              (stdlib + deps do PyInstaller)
+  _internal/...              (stdlib + deps + assets/chip.ico|png do PyInstaller 6)
 
 %LOCALAPPDATA%\TurboCore\    (instalação = espelho do package)
   updater/transactions/      (transações; nunca no pai do target)
