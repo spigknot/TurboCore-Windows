@@ -7,20 +7,24 @@ from turbocore import pdh
 
 
 def test_aggregate_threads_em_cores():
-    stats = [(3000, 10, False), (3100, 90, False),  # core 0
-             (0, 0, True), (0, 0, True)]            # core 1 parked
-    out = pdh.aggregate_cores(stats, threads_per_core=2)
-    assert out == [(3100, 90, False), (0, 0, True)]
+    stats = [3000, 3100, 0, 0]
+    assert pdh.aggregate_cores(stats, threads_per_core=2) == [3100, 0]
 
 
 def test_aggregate_sem_ht():
-    stats = [(2500, 5, False), (0, 0, True)]
-    assert pdh.aggregate_cores(stats, threads_per_core=1) == stats
+    assert pdh.aggregate_cores([2500, 0], threads_per_core=1) == [2500, 0]
 
 
 def test_format_row():
-    assert pdh.format_core_row(0, 3450, 5, False) == "Core  0   3450 MHz    5%"
-    assert "estacionado" in pdh.format_core_row(1, 0, 0, True)
+    assert pdh.format_core_row(0, 3732) == "Core  0   3732 MHz"
+    assert pdh.format_core_row(17, 1) == "Core 17      1 MHz"
+
+
+def test_efetivo_desconta_ociosidade():
+    # 3774 MHz a 46% de uso -> 1736 MHz efetivos (definição do HWiNFO)
+    assert pdh.effective_mhz(3774, 54) == 1736
+    assert pdh.effective_mhz(2301, 100) == 0
+    assert pdh.effective_mhz(3800, 0) == 3800
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="contadores do Windows")
@@ -33,6 +37,4 @@ def test_live_retorna_linhas_validas():
     finally:
         mon.close()
     assert len(stats) == logical
-    assert max(freq for freq, _, _ in stats) > 0, "frequência zerada = leitura quebrada"
-    assert all(0 <= busy <= 100 for _, busy, _ in stats)
-    assert all(isinstance(parked, bool) for _, _, parked in stats)
+    assert max(stats) > 0, "efetivo zerado = leitura quebrada"

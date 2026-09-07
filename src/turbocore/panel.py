@@ -315,10 +315,9 @@ def open_panel(state: dict):
                 pass
             if latest["stats"] is not None:
                 rows = aggregate_cores(latest["stats"], threads_per_core)
-                for index, (freq, busy, parked) in enumerate(rows):
+                for index, mhz in enumerate(rows):
                     if index < len(core_labels):
-                        core_labels[index].configure(
-                            text=format_core_row(index, freq, busy, parked))
+                        core_labels[index].configure(text=format_core_row(index, mhz))
             pending = state.get("pending_update")
             if pending and not update_button.winfo_ismapped():
                 show_update(pending)
