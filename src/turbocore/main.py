@@ -5,8 +5,8 @@ from pathlib import Path
 
 from PIL import Image
 
-from . import autostart, config, cpu_info, power, tray
-from .core_calc import build_core_options
+from turbocore import autostart, config, cpu_info, power, tray
+from turbocore.core_calc import build_core_options
 
 
 def load_icon() -> Image.Image:

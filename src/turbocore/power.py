@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import subprocess
 
-from .core_calc import parse_powercfg_ac_hex, percent_for_cores
+from turbocore.core_calc import parse_powercfg_ac_hex, percent_for_cores
 
 
 def _decode(data) -> str:

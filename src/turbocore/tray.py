@@ -4,7 +4,7 @@ from __future__ import annotations
 import pystray
 from PIL import Image
 
-from . import autostart, config, power
+from turbocore import autostart, config, power
 
 
 def core_label(n: int) -> str:
