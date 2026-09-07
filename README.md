@@ -6,17 +6,18 @@ App de bandeja (tray) para limitar os núcleos da CPU em tempo real via `powercf
 
 - Detecta os núcleos físicos (`P`) e monta o menu: `1 Core, 2 Cores, 4 Cores, ... P`.
 - Ao escolher N núcleos, calcula `X = teto(N / P * 100)` e executa, em ordem:
-  `powercfg -setacvalueindex scheme_current sub_processor CPMAXCORES X` e
-  `powercfg -setactive scheme_current`.
-- Ex.: 10 de 18 núcleos → `teto(55,55)` = `56`.
+  `powercfg -setacvalueindex ... CPMINCORES 1-thread` (mínimo em 1 thread,
+  senão o parking fica desabilitado e o máximo não pega),
+  `powercfg -setacvalueindex ... CPMAXCORES X` e `powercfg -setactive`.
+- Ex.: 10 de 18 núcleos → mínimo `teto(100/36) = 3`, máximo `teto(55,55)` = `56`.
 - `Lembrar escolha` (JSON em `%APPDATA%\TurboCore\config.json`): reaplica no boot;
-  desligado, o app **libera tudo explicitamente** (`CPMAXCORES 100`) ao iniciar.
+  desligado, o app **libera tudo explicitamente** (`CPMINCORES 100` + `CPMAXCORES 100`) ao iniciar.
 - `Iniciar no boot` (Registro `HKCU\...\Run\TurboCore`): auto-executa no logon.
 
 ## Uso
 
 Duplo clique em `dist\TurboCore\TurboCore.exe` → ícone do chip na bandeja → botão-direito.
-De baixo para cima: `Iniciar no boot`, `Lembrar escolha`, núcleos.
+De baixo para cima: `Sair`, `Iniciar no boot`, `Lembrar escolha`, núcleos.
 
 ## Build
 
