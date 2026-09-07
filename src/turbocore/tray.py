@@ -56,7 +56,6 @@ def build_menu(state: dict):
         items.append(pystray.MenuItem(
             core_label(n), _pick_callback(state, n),
             checked=_checked_picked(state, n)))
-    items.append(pystray.MenuItem("Sair", lambda icon, _item: icon.stop()))
     items.append(pystray.Menu.SEPARATOR)
     items.append(pystray.MenuItem(
         "Lembrar escolha", lambda *_a: on_toggle_remember(state),
@@ -64,6 +63,7 @@ def build_menu(state: dict):
     items.append(pystray.MenuItem(
         "Iniciar no boot", lambda *_a: on_toggle_boot(state),
         checked=lambda _item: state["boot"]))
+    items.append(pystray.MenuItem("Sair", lambda icon, _item: icon.stop()))
     return pystray.Menu(*items)
 
 
