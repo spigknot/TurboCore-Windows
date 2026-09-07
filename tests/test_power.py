@@ -47,10 +47,22 @@ def test_apply_core_limit_converte_cores_em_percent():
 def test_falha_levanta():
     bad = MagicMock()
     bad.returncode = 1
-    bad.stderr = "acesso negado"
+    bad.stderr = b"acesso negado"
     with patch.object(power.subprocess, "run", return_value=bad):
         try:
             power.apply_percent(56)
             assert False, "deveria levantar"
         except RuntimeError as e:
             assert "acesso negado" in str(e)
+
+
+def test_query_decodifica_saida_ptbr_nao_utf8():
+    # powercfg em PT-BR emite bytes fora do UTF-8 (ex. 0x87); nao pode quebrar
+    raw = ("\xcdndice de Configura\xe7\xf5es de Correntes Alternadas Atuais: "
+           "\x87 0x00000038").encode("latin-1")
+    ok = MagicMock()
+    ok.returncode = 0
+    ok.stdout = raw
+    ok.stderr = b""
+    with patch.object(power.subprocess, "run", return_value=ok):
+        assert power.query_current_percent() == 56

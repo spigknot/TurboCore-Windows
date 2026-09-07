@@ -15,11 +15,13 @@ def _powershell_cim() -> str:
     out = subprocess.run(
         ["powershell.exe", "-NoProfile", "-Command", ps],
         capture_output=True,
-        text=True,
         timeout=30,
     )
     if out.returncode != 0:
-        raise RuntimeError(f"powershell CIM falhou: {out.stderr.strip()[:200]}")
+        err = out.stderr.decode("utf-8", errors="replace") if isinstance(out.stderr, bytes) else (out.stderr or "")
+        raise RuntimeError(f"powershell CIM falhou: {err.strip()[:200]}")
+    if isinstance(out.stdout, bytes):
+        return out.stdout.decode("utf-8", errors="replace")
     return out.stdout
 
 

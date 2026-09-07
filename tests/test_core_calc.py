@@ -1,6 +1,6 @@
 import pytest
 
-from turbocore.core_calc import build_core_options, parse_powercfg_hex, percent_for_cores
+from turbocore.core_calc import build_core_options, parse_powercfg_ac_hex, parse_powercfg_hex, percent_for_cores
 
 
 def test_18_cores():
@@ -62,3 +62,30 @@ def test_parse_hex_100():
 def test_parse_hex_sem_valor():
     with pytest.raises(ValueError):
         parse_powercfg_hex("sem nada aqui")
+
+
+PT_QH_56 = (
+    "GUID de Configura\xe7\xe3o de Energia: ea062031-0e34-4ff1-9b6d-eb1059334028\r\n"
+    "    \xcdndice de Configura\xe7\xf5es de Correntes Alternadas Atuais: 0x00000038\r\n"
+    "    \xcdndice de Configura\xe7\xf5es de Correntes Cont\xednuas Atuais: 0x00000064\r\n"
+)
+
+EN_QH_56 = (
+    "Power Setting GUID: ea062031-0e34-4ff1-9b6d-eb1059334028\r\n"
+    "    Current AC Power Setting Index: 0x00000038\r\n"
+    "    Current DC Power Setting Index: 0x00000064\r\n"
+)
+
+
+def test_parse_ac_prefere_linha_ac_ptbr():
+    # AC=56 mas DC=100: deve retornar 56, nao o ultimo hex
+    assert parse_powercfg_ac_hex(PT_QH_56) == 56
+
+
+def test_parse_ac_prefere_linha_ac_en():
+    assert parse_powercfg_ac_hex(EN_QH_56) == 56
+
+
+def test_parse_ac_sem_linha_ac():
+    with pytest.raises(ValueError):
+        parse_powercfg_ac_hex("0x00000064 sem rotulo")
