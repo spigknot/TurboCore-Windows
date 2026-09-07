@@ -8,6 +8,10 @@ import subprocess
 
 def _powershell_cim() -> str:
     """Retorna texto bruto de NumberOfCores/NumberOfLogicalProcessors (um bloco por socket)."""
+    if os.name == "nt":
+        extra = {"creationflags": getattr(subprocess, "CREATE_NO_WINDOW", 0)}
+    else:
+        extra = {}
     ps = (
         "Get-CimInstance Win32_Processor | "
         "Select-Object NumberOfCores,NumberOfLogicalProcessors | Format-List"
@@ -16,6 +20,7 @@ def _powershell_cim() -> str:
         ["powershell.exe", "-NoProfile", "-Command", ps],
         capture_output=True,
         timeout=30,
+        **extra,
     )
     if out.returncode != 0:
         err = out.stderr.decode("utf-8", errors="replace") if isinstance(out.stderr, bytes) else (out.stderr or "")

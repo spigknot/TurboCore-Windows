@@ -64,3 +64,40 @@ def test_query_decodifica_saida_ptbr_nao_utf8():
     ok.stderr = b""
     with patch.object(power.subprocess, "run", return_value=ok):
         assert power.query_current_percent() == 56
+
+
+def test_sem_janela_console_no_apply():
+    import subprocess
+    calls = []
+
+    def fake_run(cmd, **kw):
+        calls.append(kw)
+        m = MagicMock()
+        m.returncode = 0
+        m.stdout = b""
+        m.stderr = b""
+        return m
+
+    with patch.object(power.subprocess, "run", side_effect=fake_run):
+        power.apply_selection(chosen_cores=10, physical_cores=18, logical_count=36)
+    assert calls, "powercfg deveria ter sido chamado"
+    for kw in calls:
+        assert kw.get("creationflags") == subprocess.CREATE_NO_WINDOW
+
+
+def test_sem_janela_console_no_query():
+    import subprocess
+    seen = {}
+
+    def fake_run(cmd, **kw):
+        seen.update(kw)
+        m = MagicMock()
+        m.returncode = 0
+        m.stdout = ("Indice de Configuracoes de Correntes Alternadas Atuais: "
+                    "0x00000064").encode("latin-1")
+        m.stderr = b""
+        return m
+
+    with patch.object(power.subprocess, "run", side_effect=fake_run):
+        assert power.query_current_percent() == 100
+    assert seen.get("creationflags") == subprocess.CREATE_NO_WINDOW

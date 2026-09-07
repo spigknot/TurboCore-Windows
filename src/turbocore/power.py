@@ -1,9 +1,15 @@
 """Envelopa powercfg. Ordem SEMPRE: set MIN -> set MAX -> setactive."""
 from __future__ import annotations
 
+import os
 import subprocess
 
 from turbocore.core_calc import min_percent_for_one_thread, parse_powercfg_ac_hex, percent_for_cores
+
+if os.name == "nt":
+    _NO_WINDOW = {"creationflags": getattr(subprocess, "CREATE_NO_WINDOW", 0)}
+else:
+    _NO_WINDOW = {}
 
 
 def _decode(data) -> str:
@@ -14,7 +20,7 @@ def _decode(data) -> str:
 
 
 def _run(cmd: list[str]) -> None:
-    p = subprocess.run(cmd, capture_output=True, timeout=60)
+    p = subprocess.run(cmd, capture_output=True, timeout=60, **_NO_WINDOW)
     if p.returncode != 0:
         raise RuntimeError(f"falhou {' '.join(cmd)}: {_decode(p.stderr).strip()[:300]}")
 
@@ -53,6 +59,7 @@ def query_current_percent() -> int:
         ["powercfg", "/qh", "SCHEME_CURRENT", "SUB_PROCESSOR", "CPMAXCORES"],
         capture_output=True,
         timeout=30,
+        **_NO_WINDOW,
     )
     if p.returncode != 0:
         raise RuntimeError(f"query falhou: {_decode(p.stderr).strip()[:200]}")

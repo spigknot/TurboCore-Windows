@@ -1,4 +1,4 @@
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from turbocore import cpu_info
 
@@ -24,3 +24,20 @@ def test_fallback_sem_powershell():
             assert cpu_info.get_logical_count() == 36
             # sem WMI, fisicos degradam para o logico (seguro: % continua correto p/ 100%)
             assert cpu_info.get_physical_cores() == 36
+
+
+def test_powershell_sem_janela_console():
+    import subprocess
+    seen = {}
+
+    def fake_run(cmd, **kw):
+        seen.update(kw)
+        m = MagicMock()
+        m.returncode = 0
+        m.stdout = b"NumberOfCores : 4\r\nNumberOfLogicalProcessors : 8\r\n"
+        m.stderr = b""
+        return m
+
+    with patch.object(cpu_info.subprocess, "run", side_effect=fake_run):
+        assert cpu_info.get_physical_cores() == 4
+    assert seen.get("creationflags") == subprocess.CREATE_NO_WINDOW
