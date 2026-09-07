@@ -9,5 +9,5 @@ python -m PyInstaller --noconfirm --clean --name TurboCore --windowed --icon ass
 status=$?
 tail -n 6 /tmp/tc_build.log
 echo "BUILD_EXIT=$status"
-ls -la dist/TurboCore.exe 2>&1
+ls -la dist/TurboCore/TurboCore.exe 2>&1
 exit $status
