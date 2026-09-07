@@ -24,6 +24,11 @@ def sobre_texts() -> tuple[str, str, str]:
     return ("TurboCore", "Limitador de núcleos da CPU", f"Versão: {__version__}")
 
 
+def cores_label(selected: int | None, physical: int) -> str:
+    """Texto do botão de núcleos: 'Cores: X' (X = selecionado ou total livre)."""
+    return f"Cores: {selected if selected is not None else physical}"
+
+
 def poll_update_once(target: Path | str, fetcher=None) -> str | None:
     """Retorna a versão remota se houver update, senão None (nunca levanta)."""
     try:
@@ -171,7 +176,9 @@ def open_panel(state: dict):
         from turbocore import tray as tray_mod  # tardio: tray importa este módulo
         tray_mod.on_pick_core(state, n)
 
-    nucleos_btn = tk.Menubutton(top, text="Núcleos", relief="raised", font=("Segoe UI", 10))
+    nucleos_var = tk.StringVar(value=cores_label(state.get("selected"), physical))
+    nucleos_btn = tk.Menubutton(top, textvariable=nucleos_var, relief="raised",
+                                font=("Segoe UI", 10))
     nucleos_btn.pack(side="left")
     drop = tk.Menu(nucleos_btn, tearoff=0)
     nucleos_btn.configure(menu=drop)
@@ -254,6 +261,7 @@ def open_panel(state: dict):
             pending = state.get("pending_update")
             if pending and not update_button.winfo_ismapped():
                 show_update(pending)
+            nucleos_var.set(cores_label(state.get("selected"), physical))
         except Exception:
             pass
         finally:

@@ -16,6 +16,15 @@ def test_sobre_traz_versao_atual():
     assert version_line == f"Versão: {__version__}"
 
 
+def test_label_cores_mostra_selecionado():
+    assert panel.cores_label(8, 18) == "Cores: 8"
+    assert panel.cores_label(1, 6) == "Cores: 1"
+
+
+def test_label_cores_sem_selecao_mostra_total():
+    assert panel.cores_label(None, 18) == "Cores: 18"
+
+
 def test_manual_check_trava_concorrencia():
     import threading
     checker = panel.ManualCheck()
