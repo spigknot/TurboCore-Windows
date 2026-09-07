@@ -4,6 +4,7 @@ __pycache__/
 dist/
 build/
 *.spec
+*.exe
 .hermes/
 release/r2_config.json
 *.pem
