@@ -7,8 +7,9 @@ python -m pytest tests/ -q >> /tmp/tc_build.log 2>&1 || { echo "TESTS_FAIL"; tai
 taskkill //F //IM TurboCore.exe > /dev/null 2>&1
 powershell.exe -NoProfile -Command "Stop-Process -Name TurboCore -Force -ErrorAction SilentlyContinue" > /dev/null 2>&1
 sleep 2
-python -m PyInstaller --noconfirm --clean --name TurboCore --windowed --icon assets/chip.ico --paths src --add-data "assets/chip.ico;assets" --add-data "assets/chip.png;assets" src/turbocore/main.py >> /tmp/tc_build.log 2>&1
+python -m PyInstaller --noconfirm --clean --name TurboCore --windowed --icon assets/chip.ico --paths src --add-data "assets/chip.ico;assets" --add-data "assets/chip.png;assets" --add-data "assets/appwin.png;assets" src/turbocore/main.py >> /tmp/tc_build.log 2>&1
 status=$?
+if [ $status -eq 0 ]; then python scripts/write_dev_build_info.py >> /tmp/tc_build.log 2>&1 || exit 1; fi
 tail -n 6 /tmp/tc_build.log
 echo "BUILD_EXIT=$status"
 ls -la dist/TurboCore/TurboCore.exe 2>&1

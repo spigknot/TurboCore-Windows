@@ -33,6 +33,7 @@ PACKAGE_REQUIRED = [
     "build-info.json",
     "_internal/assets/chip.ico",
     "_internal/assets/chip.png",
+    "_internal/assets/appwin.png",
     "_internal/base_library.zip",
     "_internal/python311.dll",
 ]
@@ -98,6 +99,7 @@ def build_package(version: str) -> pathlib.Path:
            "--paths", "src",
            "--add-data", "assets/chip.ico;assets",
            "--add-data", "assets/chip.png;assets",
+           "--add-data", "assets/appwin.png;assets",
            "--distpath", str(gen / "dist"), "--workpath", str(ROOT / "build" / "app"),
            "src/turbocore/main.py"]
     print("+", " ".join(cmd))

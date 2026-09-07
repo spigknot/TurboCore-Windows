@@ -324,33 +324,12 @@ def test_download_informa_total_real(tmp_path):
     assert seen[-1][1] == 100, seen[-1]
 
 
-def test_elevacao_quando_target_sem_escrita(tmp_path, monkeypatch):
-    monkeypatch.setattr(tu, "_is_admin", lambda: False)
-    monkeypatch.setattr(sys, "frozen", True, raising=False)
-    chamadas = []
-    monkeypatch.setattr(tu, "_shell_execute_runas",
-                        lambda exe, args: chamadas.append((exe, args)) or 0)
-    alvo = tmp_path / "nao-dir"
-    alvo.write_bytes(b"x")
-    with pytest.raises(tu.ElevatedRelaunch):
-        tu.ensure_writable_or_elevate(alvo, ["--x", "1"])
-    assert chamadas and chamadas[0][1] == ["--x", "1"]
-
-
-def test_sem_elevacao_quando_gravavel(tmp_path, monkeypatch):
-    chamadas = []
-    monkeypatch.setattr(tu, "_shell_execute_runas",
-                        lambda exe, args: chamadas.append((exe, args)))
+def test_instalacao_exige_escrita_ou_avisa(tmp_path):
     alvo = tmp_path / "app"
     alvo.mkdir()
-    tu.ensure_writable_or_elevate(alvo, [])
-    assert chamadas == []
-
-
-def test_sem_elevacao_em_dev_sem_escrita(tmp_path, monkeypatch):
-    monkeypatch.setattr(tu, "_is_admin", lambda: False)
-    monkeypatch.setattr(sys, "frozen", False, raising=False)
-    alvo = tmp_path / "nao-dir"
-    alvo.write_bytes(b"x")
-    with pytest.raises(tu.UpdateError):
-        tu.ensure_writable_or_elevate(alvo, [])
+    tu.require_writable_target(alvo)  # gravável: passa
+    travado = tmp_path / "nao-dir"
+    travado.write_bytes(b"x")
+    with pytest.raises(tu.UpdateError) as info:
+        tu.require_writable_target(travado)
+    assert "administrador" in str(info.value) or "permissão" in str(info.value)

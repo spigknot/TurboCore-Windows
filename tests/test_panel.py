@@ -12,8 +12,13 @@ def test_verde_igual_sig():
 def test_sobre_traz_versao_atual():
     from turbocore import __version__
     title, subtitle, version_line = panel.sobre_texts()
-    assert title == "TurboCore"
+    assert (title, subtitle) == ("Delegacia de Taguaí", "Setor de Investigações Gerais")
     assert version_line == f"Versão: {__version__}"
+
+
+def test_sobre_wallpaper_existe():
+    assert panel.sobre_artwork() is not None
+    assert panel.sobre_artwork().name == "appwin.png"
 
 
 def test_label_cores_mostra_selecionado():
@@ -89,6 +94,25 @@ def test_poll_update_sem_novidade():
 def test_poll_update_falha_rede():
     with patch.object(panel.updater_client, "fetch_sync_manifest", side_effect=Exception("dns")):
         assert panel.poll_update_once("/x") is None
+
+
+def test_update_click_sem_updater_mantem_app():
+    destroyed, stopped, errors = [], [], []
+    with patch.object(panel.updater_client, "launch_updater", return_value=False):
+        ok = panel.handle_update_click({}, destroyed.append, lambda: stopped.append(1), errors.append)
+    assert ok is False
+    assert destroyed == [] and stopped == []
+    assert errors and "não encontrado" in errors[0]
+
+
+def test_update_click_ok_libera_saida():
+    destroyed, stopped = [], []
+    with patch.object(panel.updater_client, "launch_updater", return_value=True):
+        ok = panel.handle_update_click(
+            {}, lambda: destroyed.append(1), lambda: stopped.append(1), lambda m: None)
+    assert ok is True
+    assert destroyed == [1]
+    assert stopped == [1]
 
 
 def test_start_auto_check_guarda_pendente_e_avisa():

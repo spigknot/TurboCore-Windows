@@ -1,8 +1,10 @@
-"""Frequência efetiva + parking por processador lógico.
+"""Frequência efetiva + uso + parking por processador lógico (WMI).
 
-Fonte: WMI `Win32_PerfFormattedData_Counters_ProcessorInformation` via
-powershell sem janela (provado ao vivo: 2301 MHz; o contador PDH
-`Processor Frequency` retorna 0 nesta máquina, por isso NÃO é usado).
+Propriedades REAIS da classe Win32_PerfFormattedData_Counters_ProcessorInformation:
+- ActualFrequency: MHz efetivos AGORA (com turbo). NÃO usar ProcessorFrequency
+  (é o nominal fixo, ex. 2301 — foi esse erro que zerou/viciou o monitor).
+- PercentIdleTime: 100 - idle = uso %.
+- ParkingStatus: 0 desperto, != 0 estacionado.
 """
 from __future__ import annotations
 
@@ -11,34 +13,40 @@ import re
 import subprocess
 
 
-def aggregate_cores(stats: list[tuple[int, bool]], threads_per_core: int) -> list[tuple[int, bool]]:
-    """Agrega threads lógicas em núcleos físicos: freq = max, parked = todos."""
+def aggregate_cores(stats: list[tuple[int, int, bool]],
+                    threads_per_core: int) -> list[tuple[int, int, bool]]:
+    """Agrega threads em núcleos: freq = max, uso = max, parked = todos."""
     if threads_per_core < 1:
         raise ValueError("threads_per_core deve ser >= 1")
     out = []
     for base in range(0, len(stats), threads_per_core):
         group = stats[base:base + threads_per_core]
-        out.append((max(freq for freq, _ in group), all(parked for _, parked in group)))
+        out.append((max(freq for freq, _, _ in group),
+                    max(busy for _, busy, _ in group),
+                    all(parked for _, _, parked in group)))
     return out
 
 
-def format_core_row(index: int, freq_mhz: int, parked: bool) -> str:
-    row = f"Core {index:2d}  {freq_mhz:5d} MHz"
+def format_core_row(index: int, freq_mhz: int, busy_pct: int, parked: bool) -> str:
+    row = f"Core {index:2d}  {freq_mhz:5d} MHz  {busy_pct:3d}%"
     return row + ("  (estacionado)" if parked else "")
 
 
-def read_logical_stats(logical: int) -> list[tuple[int, bool]]:
-    """[(freq_mhz, parked)] por processador lógico, na ordem 0..L-1."""
+def read_logical_stats(logical: int) -> list[tuple[int, int, bool]]:
+    """[(freq_mhz, uso_pct, parked)] por processador lógico, ordem 0..L-1."""
     ps = ("Get-CimInstance Win32_PerfFormattedData_Counters_ProcessorInformation"
-          " | Select-Object Name,ProcessorFrequency,ParkingStatus | Format-List")
+          " | Select-Object Name,ActualFrequency,PercentIdleTime,ParkingStatus | Format-List")
     out = subprocess.run(["powershell.exe", "-NoProfile", "-Command", ps],
-                         capture_output=True, timeout=30,
+                         capture_output=True, timeout=60,
                          **({"creationflags": getattr(subprocess, "CREATE_NO_WINDOW", 0)}
                             if os.name == "nt" else {}))
     text = out.stdout.decode("utf-8", errors="replace") if isinstance(out.stdout, bytes) else ""
     freqs: dict[str, int] = {}
-    for name, value in re.findall(r"Name\s*:\s*(\S+)[\s\S]*?ProcessorFrequency\s*:\s*(\d+)", text):
+    for name, value in re.findall(r"Name\s*:\s*(\S+)[\s\S]*?ActualFrequency\s*:\s*(\d+)", text):
         freqs.setdefault(name, int(value))
+    idles: dict[str, int] = {}
+    for name, value in re.findall(r"Name\s*:\s*(\S+)[\s\S]*?PercentIdleTime\s*:\s*(\d+)", text):
+        idles.setdefault(name, int(value))
     parks: dict[str, int] = {}
     for name, value in re.findall(r"Name\s*:\s*(\S+)[\s\S]*?ParkingStatus\s*:\s*(\d+)", text):
         parks.setdefault(name, int(value))
@@ -50,16 +58,17 @@ def read_logical_stats(logical: int) -> list[tuple[int, bool]]:
         return (1, 0, 0)
 
     ordered = sorted([n for n in freqs if n in parks and "," in n], key=key)[:logical]
-    return [(int(freqs[n]), bool(parks[n])) for n in ordered]
+    return [(int(freqs[n]), max(0, min(100, 100 - int(idles.get(n, 100)))), bool(parks[n]))
+            for n in ordered]
 
 
 class FreqMonitor:
-    """Leitura periódica; read() -> [(freq_mhz, parked)] por processador lógico."""
+    """Leitura periódica; read() -> [(freq_mhz, uso_pct, parked)] por lógico."""
 
     def __init__(self, logical: int):
         self.logical = logical
 
-    def read(self) -> list[tuple[int, bool]]:
+    def read(self) -> list[tuple[int, int, bool]]:
         stats = read_logical_stats(self.logical)
         if len(stats) != self.logical:
             raise OSError(f"WMI retornou {len(stats)} linhas, esperado {self.logical}")

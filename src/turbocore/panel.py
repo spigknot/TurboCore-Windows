@@ -21,7 +21,17 @@ REFRESH_MS = 1000
 
 
 def sobre_texts() -> tuple[str, str, str]:
-    return ("TurboCore", "Limitador de núcleos da CPU", f"Versão: {__version__}")
+    """Textos idênticos ao Sobre do SIG; só a versão é do TurboCore."""
+    return ("Delegacia de Taguaí", "Setor de Investigações Gerais", f"Versão: {__version__}")
+
+
+def sobre_artwork() -> Path | None:
+    """Wallpaper do Sobre (o mesmo appwin.png do SIG)."""
+    from turbocore.icons import artwork_candidates
+    for cand in artwork_candidates("appwin.png"):
+        if cand.is_file():
+            return cand
+    return None
 
 
 def cores_label(selected: int | None, physical: int) -> str:
@@ -37,6 +47,29 @@ def poll_update_once(target: Path | str, fetcher=None) -> str | None:
     except Exception:
         return None
     return status["remote"] if status["update"] else None
+
+
+def handle_update_click(state, destroy_fn, stop_fn, error_fn) -> bool:
+    """Botão verde: dispara o updater; só fecha o app se ele abriu.
+
+    Retorna True se o app pode encerrar, False se deve permanecer aberto.
+    """
+    try:
+        launched = updater_client.launch_updater(updater_client.install_dir())
+    except Exception as exc:
+        error_fn(f"Não foi possível iniciar o atualizador: {exc}")
+        return False
+    if not launched:
+        error_fn("Atualizador não encontrado nesta instalação.")
+        return False
+    try:
+        destroy_fn()
+    finally:
+        try:
+            stop_fn()
+        except Exception:
+            pass
+    return True
 
 
 def start_auto_check(state: dict, notify=None) -> None:
@@ -113,10 +146,13 @@ def open_sobre(parent) -> None:
     canvas.pack(fill="both", expand=True)
     title, subtitle, version_line = sobre_texts()
     try:
-        from turbocore.icons import icon_candidates
-        png = next(c for c in icon_candidates() if c.suffix.lower() == ".png" and c.exists())
+        png = sobre_artwork()
+        if png is None:
+            raise FileNotFoundError("appwin.png ausente")
         with Image.open(png) as source:
-            source = source.convert("RGBA").resize((415, 415), Image.LANCZOS)
+            image_width = 415
+            image_height = round(source.height * image_width / source.width)
+            source = source.convert("RGBA").resize((image_width, image_height), Image.LANCZOS)
             win._sobre_img = ImageTk.PhotoImage(source, master=win)
         canvas.create_image(210, 0, anchor="n", image=win._sobre_img)
     except Exception:
@@ -194,17 +230,11 @@ def open_panel(state: dict):
         update_button.pack(side="right")
 
     def on_update_click():
-        updater_client.launch_updater(updater_client.install_dir())
-        icon = state.get("icon")
-        try:
-            root.destroy()
-        finally:
-            state["panel"] = None
-            if icon is not None:
-                try:
-                    icon.stop()
-                except Exception:
-                    pass
+        handle_update_click(
+            state,
+            destroy_fn=lambda: (root.destroy(), state.update(panel=None)),
+            stop_fn=lambda: (state.get("icon").stop() if state.get("icon") else None),
+            error_fn=lambda msg: messagebox.showerror("TurboCore", msg))
 
     update_button.configure(command=on_update_click)
 
@@ -216,14 +246,23 @@ def open_panel(state: dict):
         core_labels.append(label)
     monitor = FreqMonitor(logical)
 
-    # Linha final: Verificar Atualizações + Sobre (espelha o menu do SIG).
+    # Barra superior (espelha o menu do SIG): Verificar Atualizações + Sobre.
+    menubar = tk.Menu(root)
+    menubar.add_command(label="Verificar Atualizações", command=lambda: on_check_click())
+    menubar.add_command(label="Sobre", command=lambda: open_sobre(root))
+    root.config(menu=menubar)
     checker = ManualCheck()
-    bottom = tk.Frame(root)
-    bottom.pack(side="bottom", fill="x", padx=10, pady=10)
+
+    def set_check_enabled(enabled: bool) -> None:
+        try:
+            menubar.entryconfigure("Verificar Atualizações",
+                                   state="normal" if enabled else "disabled")
+        except Exception:
+            pass
 
     def on_manual_done(kind: str, payload) -> None:
         def ui():
-            check_btn.configure(state="normal")
+            set_check_enabled(True)
             if kind == "updated":
                 state["pending_update"] = payload
                 show_update(payload)
@@ -240,12 +279,27 @@ def open_panel(state: dict):
         if not checker.start(updater_client.install_dir(), on_manual_done):
             messagebox.showinfo("TurboCore", "A verificação já está em andamento.")
             return
-        check_btn.configure(state="disabled")
+        set_check_enabled(False)
 
-    check_btn = ttk.Button(bottom, text="Verificar Atualizações", command=on_check_click)
-    check_btn.pack(side="left")
-    ttk.Button(bottom, text="Sobre",
-               command=lambda: open_sobre(root)).pack(side="left", padx=(8, 0))
+    import queue as queue_mod
+    stats_queue: queue_mod.Queue = queue_mod.Queue(maxsize=1)
+    stop_reader = threading.Event()
+    latest: dict = {"stats": None}
+
+    def reader():
+        while not stop_reader.is_set():
+            try:
+                stats = monitor.read()
+                try:
+                    stats_queue.get_nowait()
+                except queue_mod.Empty:
+                    pass
+                stats_queue.put(stats)
+            except Exception:
+                pass
+            stop_reader.wait(REFRESH_MS / 1000.0)
+
+    threading.Thread(target=reader, daemon=True).start()
 
     def tick():
         try:
@@ -254,10 +308,17 @@ def open_panel(state: dict):
         except Exception:
             return
         try:
-            stats = monitor.read()
-            for index, (freq, parked) in enumerate(aggregate_cores(stats, threads_per_core)):
-                if index < len(core_labels):
-                    core_labels[index].configure(text=format_core_row(index, freq, parked))
+            try:
+                while True:
+                    latest["stats"] = stats_queue.get_nowait()
+            except queue_mod.Empty:
+                pass
+            if latest["stats"] is not None:
+                rows = aggregate_cores(latest["stats"], threads_per_core)
+                for index, (freq, busy, parked) in enumerate(rows):
+                    if index < len(core_labels):
+                        core_labels[index].configure(
+                            text=format_core_row(index, freq, busy, parked))
             pending = state.get("pending_update")
             if pending and not update_button.winfo_ismapped():
                 show_update(pending)
@@ -272,6 +333,7 @@ def open_panel(state: dict):
 
     def on_close():
         try:
+            stop_reader.set()
             monitor.close()
         finally:
             state["panel"] = None

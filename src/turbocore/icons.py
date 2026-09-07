@@ -35,23 +35,25 @@ def load_tray_image(path: Path, size: int = TRAY_SIZE) -> Image.Image:
     return img
 
 
-def icon_candidates() -> list[Path]:
-    """Onde procurar chip.ico/png, do mais especifico ao mais generico."""
+def artwork_candidates(filename: str) -> list[Path]:
+    """Onde procurar um artwork (chip.*, appwin.*), do mais especifico ao generico."""
     cands: list[Path] = []
     meipass = getattr(sys, "_MEIPASS", None)
     if meipass:  # congelado: onedir (_internal) ou onefile (temp)
-        cands.append(Path(meipass) / "assets" / "chip.png")
-        cands.append(Path(meipass) / "assets" / "chip.ico")
+        cands.append(Path(meipass) / "assets" / filename)
     if getattr(sys, "frozen", False):  # dir do exe (layouts antigos/instalados)
         exe_dir = Path(sys.executable).resolve().parent
-        cands.append(exe_dir / "assets" / "chip.png")
-        cands.append(exe_dir / "assets" / "chip.ico")
+        cands.append(exe_dir / "assets" / filename)
     import turbocore.main as main_mod  # __file__ real do modulo (mockavel em teste)
     here = Path(main_mod.__file__).resolve()
-    cands.append(here.parent.parent.parent / "assets" / "chip.png")  # dev: raiz
-    cands.append(here.parent.parent.parent / "assets" / "chip.ico")
-    cands.append(Path("assets/chip.png"))
+    cands.append(here.parent.parent.parent / "assets" / filename)  # dev: raiz
+    cands.append(Path(f"assets/{filename}"))
     return cands
+
+
+def icon_candidates() -> list[Path]:
+    """Onde procurar chip.ico/png, do mais especifico ao mais generico."""
+    return artwork_candidates("chip.png") + artwork_candidates("chip.ico")
 
 
 def load_icon() -> Image.Image:

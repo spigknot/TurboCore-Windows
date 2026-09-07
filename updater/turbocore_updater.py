@@ -68,19 +68,6 @@ class UpdateError(RuntimeError):
     pass
 
 
-class ElevatedRelaunch(RuntimeError):
-    """Sinal interno: uma cópia elevada foi disparada; o processo atual deve sair."""
-
-
-def _is_admin() -> bool:
-    if os.name != "nt":
-        return True
-    try:
-        return bool(ctypes.windll.shell32.IsUserAnAdmin())
-    except Exception:
-        return False
-
-
 def _target_writable(target: Path) -> bool:
     try:
         target.mkdir(parents=True, exist_ok=True)
@@ -92,25 +79,15 @@ def _target_writable(target: Path) -> bool:
         return False
 
 
-def _shell_execute_runas(executable: str, args: list[str]) -> int:
-    params = " ".join(f'"{a}"' for a in args)
-    result = ctypes.windll.shell32.ShellExecuteW(None, "runas", executable, params, None, 1)
-    if int(result) <= 32:
-        raise UpdateError(f"elevação negada ou falhou (ShellExecute={int(result)})")
-    return int(result)
+def require_writable_target(target: Path) -> None:
+    """Como o SIG: a pasta do app tem users-modify (põe o instalador).
 
-
-def ensure_writable_or_elevate(target: Path, argv: list[str]) -> None:
-    """Garante escrita no target ou relança elevado (cong.) / orienta (dev)."""
-    if _target_writable(target):
-        return
-    if _is_admin():
-        return  # admin sem escrita = problema real; o erro aparece na operação
-    if getattr(sys, "frozen", False):
-        _shell_execute_runas(str(Path(sys.executable).resolve()), list(argv))
-        raise ElevatedRelaunch("cópia elevada disparada")
-    raise UpdateError(
-        f"sem permissão de escrita em {target}. Execute como administrador.")
+    Sem escrita, orienta em vez de falhar cripticamente no lock.
+    """
+    if not _target_writable(target):
+        raise UpdateError(
+            f"sem permissão de escrita em {target}. Reinstale pelo setup "
+            "ou execute o atualizador como administrador.")
 
 
 def _log(log_path: Path | None, message: str) -> None:
@@ -1025,25 +1002,13 @@ class StandaloneUpdaterUI:
             f"por cima da {installed}?\n\nEsta ação sobrescreverá arquivos da "
             "instalação atual.", icon="warning")
 
-    def _ensure_elevated_or_block(self) -> bool:
-        if _target_writable(self.target) or _is_admin():
-            return True
-        if getattr(sys, "frozen", False):
-            _shell_execute_runas(
-                str(Path(sys.executable).resolve()),
-                ["--standalone-worker", "--standalone-target", str(self.target)])
-            self._write_log("Reiniciando como administrador...")
-            self.root.destroy()
-            return False
-        self.messagebox.showerror(
-            "Atualizador do TurboCore",
-            f"Sem permissão de escrita em {self.target}.\n\nExecute como administrador.")
-        return False
-
     def install(self, kind: str) -> None:
         if self.busy:
             return
-        if not self._ensure_elevated_or_block():
+        try:
+            require_writable_target(self.target)
+        except UpdateError as exc:
+            self.messagebox.showerror("Atualizador do TurboCore", str(exc))
             return
         if kind == "sync":
             if not self.sync_state:
@@ -1297,20 +1262,14 @@ def main(argv: list[str] | None = None) -> int:
     if getattr(sys, "frozen", False) and not args.relocated:
         return _relocate_self([a for a in (sys.argv[1:] if argv is None else argv)])
     try:
-        ensure_writable_or_elevate(
-            args.target, list(sys.argv[1:] if argv is None else argv))
         if args.full_zip is not None:
+            require_writable_target(args.target)
             worker_full(args.full_zip, args.target, args.pid, args.log,
                         wait_timeout=args.wait_timeout, startup_timeout=args.startup_timeout)
         else:
+            require_writable_target(args.target)
             worker_diff(args.target, args.pid, args.log, force=args.force,
                         wait_timeout=args.wait_timeout, startup_timeout=args.startup_timeout)
-        return 0
-    except ElevatedRelaunch as exc:
-        try:
-            _log(args.log.resolve(), str(exc))
-        except Exception:
-            pass
         return 0
     except (UpdateError, OSError, ValueError) as exc:
         try:
