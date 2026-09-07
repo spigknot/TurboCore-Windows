@@ -37,12 +37,24 @@ def _refresh(state: dict) -> None:
         icon.update_menu()
 
 
+def _pick_callback(state: dict, n: int):
+    def pick(_icon, _item):
+        on_pick_core(state, n)
+    return pick
+
+
+def _checked_picked(state: dict, n: int):
+    def is_picked(_item):
+        return state["selected"] == n
+    return is_picked
+
+
 def build_menu(state: dict):
     items = []
     for n in state["options"]:
         items.append(pystray.MenuItem(
-            core_label(n), lambda _icon, _item, n=n: on_pick_core(state, n),
-            checked=lambda _item, n=n: state["selected"] == n))
+            core_label(n), _pick_callback(state, n),
+            checked=_checked_picked(state, n)))
     items.append(pystray.MenuItem("Sair", lambda icon, _item: icon.stop()))
     items.append(pystray.Menu.SEPARATOR)
     items.append(pystray.MenuItem(
