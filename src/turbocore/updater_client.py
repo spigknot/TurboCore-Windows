@@ -196,3 +196,46 @@ def launch_updater(target: Path) -> bool:
         creationflags=creationflags, close_fds=True,
     )
     return True
+
+
+def download_url(url: str, destination: Path, progress_callback=None,
+                 urlopen=None) -> str:
+    """Baixa de URL (R2) devolvendo o sha256 (clone SIG download_github_url).
+
+    progress_callback(downloaded, total) é chamado a cada chunk.
+    """
+    request = urllib.request.Request(url, headers={"User-Agent": HTTP_USER_AGENT})
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    opener = urlopen or urllib.request.urlopen
+    digest = hashlib.sha256()
+    with opener(request, timeout=120) as response, destination.open("wb") as output:
+        total = int(response.headers.get("Content-Length") or 0)
+        downloaded = 0
+        while True:
+            chunk = response.read(1024 * 256)
+            if not chunk:
+                break
+            output.write(chunk)
+            digest.update(chunk)
+            downloaded += len(chunk)
+            if progress_callback:
+                progress_callback(downloaded, total)
+    return digest.hexdigest()
+
+
+def launch_updater_sync(staged: Path, removals_path: Path, version: str,
+                        target: Path) -> bool:
+    """Dispara o updater para aplicar um staged já baixado (fluxo SIG)."""
+    updater = find_updater_exe()
+    if updater is None:
+        return False
+    log_path = Path(os.environ.get("TEMP") or ".") / "TurboCoreUpdater.log"
+    creationflags = getattr(subprocess, "DETACHED_PROCESS", 0)
+    subprocess.Popen(
+        [str(updater), "--sync-staged", str(staged), "--sync-removals",
+         str(removals_path), "--sync-version", str(version),
+         "--target", str(target), "--pid", str(os.getpid()),
+         "--log", str(log_path)],
+        creationflags=creationflags, close_fds=True,
+    )
+    return True

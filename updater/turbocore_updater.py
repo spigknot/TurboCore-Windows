@@ -553,9 +553,10 @@ def _terminate_stray_processes(exe_path: Path, log_path: Path | None) -> None:
         kernel32.CloseHandle(snap)
 
 
-def _launch_and_verify(target_exe: Path, timeout: int, log_path: Path | None):
+def _launch_and_verify(target_exe: Path, timeout: int, log_path: Path | None,
+                       extra_args: tuple = ()):
     flags = getattr(subprocess, "DETACHED_PROCESS", 0)
-    proc = subprocess.Popen([str(target_exe)], creationflags=flags, close_fds=True,
+    proc = subprocess.Popen([str(target_exe), *extra_args], creationflags=flags, close_fds=True,
                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     deadline = time.monotonic() + max(timeout, 1)
     while time.monotonic() < deadline:
@@ -587,6 +588,9 @@ def worker_diff(target: Path, pid: int, log_path: Path, *, force: bool = False,
         _log(log_path, "Já atualizado. Nada a fazer.")
         return
     entries = {str(e["path"]): e for e in manifest["files"] if isinstance(e, dict)}
+    # Nunca auto-substituir o updater em execução: ele próprio entrega a cópia
+    # nova (o pacote a contém; o bootstrap a usa na próxima atualização).
+    entries = {p: e for p, e in entries.items() if p != UPDATER_EXE_NAME}
     plan = classify_sync_files(target, entries)
     _log(log_path, f"Baixar={len(plan['download'])} manter={len(plan['keep'])}")
     transaction = Path(tempfile.mkdtemp(prefix=".tc-updater-", dir=str(_transaction_root())))
@@ -605,12 +609,14 @@ def worker_diff(target: Path, pid: int, log_path: Path, *, force: bool = False,
                     raise UpdateError(f"SHA-256 divergente: {path}")
             removals = _target_tree(target) - set(entries)
             removals.discard(UPDATER_LOG_NAME)
+            removals.discard(UPDATER_EXE_NAME)  # nunca remover o próprio em execução
             _wait_for_pid(pid, wait_timeout, log_path)
             _terminate_stray_processes(target / APP_EXE_NAME, log_path)
             _apply_staged(staged, target, transaction, removals, log_path)
         if installed_version(target) != remote:
             raise UpdateError("versão aplicada não confere com o manifesto")
-        _launch_and_verify(target / APP_EXE_NAME, startup_timeout, log_path)
+        _launch_and_verify(target / APP_EXE_NAME, startup_timeout, log_path,
+                            extra_args=("--post-update",))
         _journal_write(transaction, {"status": "done", "version": remote})
         _log(log_path, "Atualização aplicada e validada.")
     except Exception:
@@ -643,9 +649,52 @@ def worker_full(zip_path: Path, target: Path, pid: int, log_path: Path, *,
             _wait_for_pid(pid, wait_timeout, log_path)
             _terminate_stray_processes(target / APP_EXE_NAME, log_path)
             _apply_staged(staged, target, transaction, removals, log_path)
-        _launch_and_verify(target / APP_EXE_NAME, startup_timeout, log_path)
+        _launch_and_verify(target / APP_EXE_NAME, startup_timeout, log_path,
+                            extra_args=("--post-update",))
         _journal_write(transaction, {"status": "done", "version": remote})
         _log(log_path, "Instalação completa aplicada e validada.")
+    except Exception:
+        try:
+            _rollback(transaction, target, log_path)
+        except Exception as rollback_error:
+            _log(log_path, f"Falha crítica no rollback: {rollback_error}")
+        raise
+    finally:
+        shutil.rmtree(transaction, ignore_errors=True)
+
+
+def worker_apply_staged(staged: Path, removals_file: Path, version: str,
+                        target: Path, pid: int, log_path: Path, *,
+                        wait_timeout: int = 120, startup_timeout: int = 12) -> None:
+    """Aplica um staged já baixado pelo app (fluxo SIG), com rollback protegido.
+
+    O app (painel) baixa os arquivos novos com progresso por arquivo e entrega
+    aqui para aplicação transacional + relançamento. O removals_file lista os
+    órfãos a apagar (um caminho por linha).
+    """
+    target, log_path = target.resolve(), log_path.resolve()
+    _log(log_path, f"TurboCoreUpdater apply-staged: version={version} target={target}")
+    _recover_interrupted(target, log_path)
+    removals = set()
+    if removals_file and Path(removals_file).is_file():
+        for line in Path(removals_file).read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if line:
+                removals.add(line)
+    removals.discard(UPDATER_LOG_NAME)
+    transaction = Path(tempfile.mkdtemp(prefix=".tc-updater-", dir=str(_transaction_root())))
+    _journal_write(transaction, {"status": "started", "version": version})
+    try:
+        with installation_lock(target):
+            _wait_for_pid(pid, wait_timeout, log_path)
+            _terminate_stray_processes(target / APP_EXE_NAME, log_path)
+            _apply_staged(staged, target, transaction, removals, log_path)
+        if installed_version(target) != version:
+            raise UpdateError("versão aplicada não confere com o staged")
+        _launch_and_verify(target / APP_EXE_NAME, startup_timeout, log_path,
+                            extra_args=("--post-update",))
+        _journal_write(transaction, {"status": "done", "version": version})
+        _log(log_path, "Atualização aplicada e validada.")
     except Exception:
         try:
             _rollback(transaction, target, log_path)
@@ -1247,6 +1296,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--startup-timeout", type=int, default=12)
     parser.add_argument("--standalone-worker", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--standalone-target", type=Path, help=argparse.SUPPRESS)
+    parser.add_argument("--sync-staged", type=Path, help=argparse.SUPPRESS)
+    parser.add_argument("--sync-removals", type=Path, help=argparse.SUPPRESS)
+    parser.add_argument("--sync-version", type=str, help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
     if args.standalone_worker:
         return run_standalone(args.standalone_target, worker=True)
@@ -1262,7 +1314,12 @@ def main(argv: list[str] | None = None) -> int:
     if getattr(sys, "frozen", False) and not args.relocated:
         return _relocate_self([a for a in (sys.argv[1:] if argv is None else argv)])
     try:
-        if args.full_zip is not None:
+        if args.sync_staged is not None:
+            require_writable_target(args.target)
+            worker_apply_staged(args.sync_staged, args.sync_removals, str(args.sync_version),
+                                args.target, args.pid, args.log,
+                                wait_timeout=args.wait_timeout, startup_timeout=args.startup_timeout)
+        elif args.full_zip is not None:
             require_writable_target(args.target)
             worker_full(args.full_zip, args.target, args.pid, args.log,
                         wait_timeout=args.wait_timeout, startup_timeout=args.startup_timeout)

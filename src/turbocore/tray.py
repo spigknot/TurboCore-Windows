@@ -58,7 +58,11 @@ def on_toggle_boot(state: dict) -> None:
 
 def _refresh(state: dict) -> None:
     icon = state.get("icon")
-    if icon is not None:
+    if icon is None:
+        return
+    if hasattr(icon, "update_menu"):
+        # pystray (fallback): reconstrói o menu nativo. No backend win32 o
+        # popup é montado na hora com o state atual: nada a fazer.
         icon.menu = build_menu(state)
         icon.update_menu()
 
@@ -96,6 +100,22 @@ def build_menu(state: dict):
 
 
 def run_tray(state: dict, icon_image: Image.Image) -> None:
+    try:
+        from turbocore import tray_win32
+        if tray_win32.available():
+            tray_win32.run(state)
+            return
+    except Exception:
+        pass
     icon = pystray.Icon("TurboCore", icon_image, "TurboCore", menu=build_menu(state))
     state["icon"] = icon
     icon.run()
+
+
+def open_tray_popup(state: dict, coords=None) -> None:
+    """Popup custom do right-click (backend win32); no-op no fallback pystray."""
+    try:
+        from turbocore import tray_win32
+    except Exception:
+        return
+    tray_win32.show_popup(state, coords)

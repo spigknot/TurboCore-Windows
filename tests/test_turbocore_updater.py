@@ -217,13 +217,54 @@ def test_worker_diff_aplica_e_limpa(tmp_path, monkeypatch):
     monkeypatch.setattr(tu, "fetch_sync_manifest", lambda: manifest)
     _patch_downloads(monkeypatch, manifest)
     launched = []
-    monkeypatch.setattr(tu, "_launch_and_verify", lambda exe, t, log: launched.append(exe))
+    monkeypatch.setattr(tu, "_launch_and_verify", lambda exe, t, log, **k: launched.append(exe))
     log = tmp_path / "t.log"
     tu.worker_diff(target, 0, log, wait_timeout=1, startup_timeout=1)
     assert (target / "TurboCore.exe").read_bytes() == b"app-v2"
     assert (target / "assets" / "chip.ico").read_bytes() == b"ico"
     assert tu.installed_version(target) == "20260907_002"
     assert launched == [target / "TurboCore.exe"]
+    assert "validada" in log.read_text(encoding="utf-8")
+
+
+def test_worker_apply_staged_aplica_e_valida(tmp_path, monkeypatch):
+    """worker_apply_staged aplica arquivos pré-baixados e relança o app."""
+    import sys
+    monkeypatch.setattr(sys, "frozen", False, raising=False)
+    target = _fake_target(tmp_path / "app")
+    staged = tmp_path / "staged"
+    (staged / "_internal").mkdir(parents=True)
+    (staged / "TurboCore.exe").write_bytes(b"app-v3")
+    (staged / "build-info.json").write_text(json.dumps({"version": "20260907_003"}))
+    removals = tmp_path / "removals.txt"
+    removals.write_text("assets/chip.ico\n")
+    launched = []
+    monkeypatch.setattr(tu, "_launch_and_verify", lambda exe, t, log, **k: launched.append(exe))
+    log = tmp_path / "t.log"
+    tu.worker_apply_staged(staged, removals, "20260907_003", target, 0, log,
+                           wait_timeout=1, startup_timeout=1)
+    assert (target / "TurboCore.exe").read_bytes() == b"app-v3"
+    assert tu.installed_version(target) == "20260907_003"
+    assert not (target / "assets" / "chip.ico").exists()
+    assert launched == [target / "TurboCore.exe"]
+    assert "validada" in log.read_text(encoding="utf-8")
+
+
+def test_worker_diff_nao_auto_substitui_updater(tmp_path, monkeypatch):
+    """O updater em execução NUNCA é substituído pelo diff (self-exclusão)."""
+    import sys
+    monkeypatch.setattr(sys, "frozen", False, raising=False)
+    target = _fake_target(tmp_path / "app")
+    manifest, _ = _fake_manifest_v2()
+    monkeypatch.setattr(tu, "fetch_sync_manifest", lambda: manifest)
+    _patch_downloads(monkeypatch, manifest)
+    launched = []
+    monkeypatch.setattr(tu, "_launch_and_verify", lambda exe, t, log, **k: launched.append(exe))
+    log = tmp_path / "t.log"
+    tu.worker_diff(target, 0, log, wait_timeout=1, startup_timeout=1)
+    # O updater original permanece (sua cópia nova só entra no pacote; o
+    # bootstrap a usa na próxima atualização).
+    assert (target / "TurboCoreUpdater.exe").read_bytes() == b"upd-v1"
     assert "validada" in log.read_text(encoding="utf-8")
 
 
@@ -235,7 +276,7 @@ def test_worker_diff_falha_restaura(tmp_path, monkeypatch):
     monkeypatch.setattr(tu, "fetch_sync_manifest", lambda: manifest)
     _patch_downloads(monkeypatch, manifest)
 
-    def boom(exe, t, log):
+    def boom(exe, t, log, **k):
         raise tu.UpdateError("novo exe morreu")
 
     monkeypatch.setattr(tu, "_launch_and_verify", boom)
@@ -284,12 +325,27 @@ def test_worker_diff_chama_progress(tmp_path, monkeypatch):
     manifest, _ = _fake_manifest_v2()
     monkeypatch.setattr(tu, "fetch_sync_manifest", lambda: manifest)
     _patch_downloads(monkeypatch, manifest)
-    monkeypatch.setattr(tu, "_launch_and_verify", lambda exe, t, log: None)
+    monkeypatch.setattr(tu, "_launch_and_verify", lambda exe, t, log, **k: None)
     seen = []
     tu.worker_diff(target, 0, tmp_path / "t.log", wait_timeout=1, startup_timeout=1,
                    progress=lambda i, n, p: seen.append((i, n, p)))
     assert [s[0] for s in seen] == [1, 2, 3]
     assert all(s[1] == 3 for s in seen)
+
+
+def test_relancamento_pos_update_abre_painel(tmp_path, monkeypatch):
+    """O app relançado recebe --post-update (abre o painel p/ conferir)."""
+    import sys
+    monkeypatch.setattr(sys, "frozen", False, raising=False)
+    target = _fake_target(tmp_path / "app")
+    manifest, _ = _fake_manifest_v2()
+    monkeypatch.setattr(tu, "fetch_sync_manifest", lambda: manifest)
+    _patch_downloads(monkeypatch, manifest)
+    calls = []
+    monkeypatch.setattr(tu, "_launch_and_verify",
+                        lambda exe, t, log, **k: calls.append(k))
+    tu.worker_diff(target, 0, tmp_path / "t.log", wait_timeout=1, startup_timeout=1)
+    assert calls and calls[0].get("extra_args") == ("--post-update",)
 
 
 def test_download_informa_total_real(tmp_path):

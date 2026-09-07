@@ -44,6 +44,9 @@ def all_widgets(w):
 flat = list(all_widgets(root))
 assert not any(isinstance(w, tk.Listbox) for w in flat)
 assert any(isinstance(w, tk.Menubutton) for w in flat)
+# Caixa de log presente e registrada no state (fluxo do update).
+assert any(isinstance(w, tk.Text) for w in flat), "caixa de log ausente"
+assert state.get("log") is not None
 panel.open_sobre(root)
 root.update()
 sWin = [w for w in root.winfo_children() if w.winfo_class() == "Toplevel"]
