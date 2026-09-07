@@ -17,6 +17,7 @@ import shutil
 import subprocess
 import sys
 import zipfile
+from pathlib import Path
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 VERSION_RE = re.compile(r"^\d{8}_\d{3}$")
