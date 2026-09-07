@@ -8,6 +8,7 @@ $env:SOURCE_DATE_EPOCH = "946684800"
 $env:PYTHONHASHSEED = "0"
 & $PY -m PyInstaller --noconfirm --clean --onefile --windowed --noupx `
   --name TurboCoreUpdater `
+  --add-data "assets/chip.png;assets" `
   --distpath updater/bin --workpath build/updater --specpath build/updater `
   updater/turbocore_updater.py
 if ($LASTEXITCODE -ne 0) { exit 1 }

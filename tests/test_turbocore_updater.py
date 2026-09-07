@@ -9,6 +9,7 @@ import zipfile
 from pathlib import Path
 
 import pytest
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "updater"))
 
@@ -289,3 +290,67 @@ def test_worker_diff_chama_progress(tmp_path, monkeypatch):
                    progress=lambda i, n, p: seen.append((i, n, p)))
     assert [s[0] for s in seen] == [1, 2, 3]
     assert all(s[1] == 3 for s in seen)
+
+
+def test_download_informa_total_real(tmp_path):
+    import io
+
+    data = b"y" * 100
+    seen = []
+
+    class FakeResp:
+        headers = {"Content-Length": "100"}
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def read(self, n=-1):
+            nonlocal data
+            chunk, data = data[:10], data[10:]
+            return chunk
+
+    dest = tmp_path / "x.bin"
+    try:
+        with patch.object(tu.urllib.request, "urlopen", return_value=FakeResp()):
+            tu.download_file("https://x/f.zip", dest,
+                             progress=lambda done, total: seen.append((done, total)))
+    finally:
+        if dest.exists():
+            dest.unlink()
+    assert seen, "progress deveria ter sido chamado"
+    assert seen[-1][1] == 100, seen[-1]
+
+
+def test_elevacao_quando_target_sem_escrita(tmp_path, monkeypatch):
+    monkeypatch.setattr(tu, "_is_admin", lambda: False)
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    chamadas = []
+    monkeypatch.setattr(tu, "_shell_execute_runas",
+                        lambda exe, args: chamadas.append((exe, args)) or 0)
+    alvo = tmp_path / "nao-dir"
+    alvo.write_bytes(b"x")
+    with pytest.raises(tu.ElevatedRelaunch):
+        tu.ensure_writable_or_elevate(alvo, ["--x", "1"])
+    assert chamadas and chamadas[0][1] == ["--x", "1"]
+
+
+def test_sem_elevacao_quando_gravavel(tmp_path, monkeypatch):
+    chamadas = []
+    monkeypatch.setattr(tu, "_shell_execute_runas",
+                        lambda exe, args: chamadas.append((exe, args)))
+    alvo = tmp_path / "app"
+    alvo.mkdir()
+    tu.ensure_writable_or_elevate(alvo, [])
+    assert chamadas == []
+
+
+def test_sem_elevacao_em_dev_sem_escrita(tmp_path, monkeypatch):
+    monkeypatch.setattr(tu, "_is_admin", lambda: False)
+    monkeypatch.setattr(sys, "frozen", False, raising=False)
+    alvo = tmp_path / "nao-dir"
+    alvo.write_bytes(b"x")
+    with pytest.raises(tu.UpdateError):
+        tu.ensure_writable_or_elevate(alvo, [])
