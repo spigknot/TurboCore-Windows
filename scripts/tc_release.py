@@ -31,8 +31,8 @@ PACKAGE_REQUIRED = [
     "TurboCore.exe",
     "TurboCoreUpdater.exe",
     "build-info.json",
-    "assets/chip.ico",
-    "assets/chip.png",
+    "_internal/assets/chip.ico",
+    "_internal/assets/chip.png",
     "_internal/base_library.zip",
     "_internal/python311.dll",
 ]
