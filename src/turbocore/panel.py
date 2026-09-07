@@ -247,7 +247,7 @@ def open_panel(state: dict):
     monitor = FreqMonitor(logical)
 
     # Barra superior (espelha o menu do SIG): Verificar Atualizações + Sobre.
-    menubar = tk.Menu(root)
+    menubar = tk.Menu(root, tearoff=0)
     menubar.add_command(label="Verificar Atualizações", command=lambda: on_check_click())
     menubar.add_command(label="Sobre", command=lambda: open_sobre(root))
     root.config(menu=menubar)

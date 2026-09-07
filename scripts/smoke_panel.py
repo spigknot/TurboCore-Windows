@@ -48,6 +48,12 @@ panel.open_sobre(root)
 root.update()
 sWin = [w for w in root.winfo_children() if w.winfo_class() == "Toplevel"]
 assert sWin and sWin[0].title() == "Sobre", [w.winfo_class() for w in root.winfo_children()]
+# menubar do painel + wallpaper no canvas do Sobre
+menu = root.nametowidget(root.cget("menu"))
+labels_mb = [menu.entrycget(i, "label") for i in range(menu.index("end") + 1)]
+assert labels_mb == ["Verificar Atualizações", "Sobre"], labels_mb
+canvas = next(w for w in sWin[0].winfo_children() if w.winfo_class() == "Canvas")
+assert "image" in canvas.find_all() or canvas.find_all(), "wallpaper ausente no Sobre"
 sWin[0].destroy()
 root.destroy()
 state["panel"] = None
