@@ -26,9 +26,10 @@ tail = log.read_text(encoding="utf-8").splitlines()[-4:]
 print("\n".join(tail))
 
 version = json.loads((target / "build-info.json").read_text())["version"]
-assert version == "20260907_001", version
+assert version == "20260907_002", version
 assert (target / "TurboCore.exe").read_bytes() != b"corrompido"
 assert (target / "_internal" / "assets" / "chip.ico").is_file()
+assert (target / "_internal" / "assets" / "appwin.png").is_file()
 print("E2E_UPDATE_OK")
 subprocess.run(
     ["powershell.exe", "-NoProfile", "-Command",
