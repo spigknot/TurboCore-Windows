@@ -141,6 +141,30 @@ def test_version_key():
     assert tu.version_key("x") == (0, 0, 0)
 
 
+def test_default_target_program_files(monkeypatch):
+    monkeypatch.setenv("ProgramFiles", r"C:\Program Files")
+    assert tu._default_target() == Path(r"C:\Program Files\TurboCore")
+
+
+def test_full_download_vai_para_cache(tmp_path, monkeypatch):
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "local"))
+    target = Path(r"C:\Program Files\TurboCore")
+    dest = tu.full_download_path(target, "20260907_002", "full", "turbocore_x_full.zip")
+    assert dest.name == "turbocore_x_full.zip"
+    assert str(target) not in str(dest)
+    assert "20260907_002" in str(dest)
+
+
+def test_standalone_log_cai_no_cache_quando_target_sem_escrita(tmp_path, monkeypatch):
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "local"))
+    alvo_ok = tmp_path / "app"
+    alvo_ok.mkdir()
+    assert tu._standalone_log_path(alvo_ok) == alvo_ok / "TurboCoreUpdater.log"
+    alvo_arquivo = tmp_path / "nao-dir"
+    alvo_arquivo.write_bytes(b"x")
+    assert tu._standalone_log_path(alvo_arquivo).parent.name == "updater"
+
+
 def _fake_target(root: Path, version="20260907_001"):
     (root / "_internal").mkdir(parents=True, exist_ok=True)
     (root / "TurboCore.exe").write_bytes(b"app-v1")
@@ -235,3 +259,33 @@ def test_recover_interrompida(tmp_path, monkeypatch):
     tu._recover_interrupted(target, tmp_path / "r.log")
     assert (target / "TurboCore.exe").read_bytes() == b"app-v1"
     assert not txn.exists()
+
+
+def test_validate_sync_target(tmp_path):
+    vazio = tmp_path / "vazio"
+    vazio.mkdir()
+    tu._validate_sync_target(vazio)  # vazio ok (instalação nova)
+    ok = tmp_path / "ok"
+    (ok).mkdir()
+    (ok / "TurboCore.exe").write_bytes(b"x")
+    tu._validate_sync_target(ok)
+    estranha = tmp_path / "estranha"
+    estranha.mkdir()
+    (estranha / "outro.exe").write_bytes(b"x")
+    with pytest.raises(tu.UpdateError):
+        tu._validate_sync_target(estranha)
+
+
+def test_worker_diff_chama_progress(tmp_path, monkeypatch):
+    import sys
+    monkeypatch.setattr(sys, "frozen", False, raising=False)
+    target = _fake_target(tmp_path / "app")
+    manifest, _ = _fake_manifest_v2()
+    monkeypatch.setattr(tu, "fetch_sync_manifest", lambda: manifest)
+    _patch_downloads(monkeypatch, manifest)
+    monkeypatch.setattr(tu, "_launch_and_verify", lambda exe, t, log: None)
+    seen = []
+    tu.worker_diff(target, 0, tmp_path / "t.log", wait_timeout=1, startup_timeout=1,
+                   progress=lambda i, n, p: seen.append((i, n, p)))
+    assert [s[0] for s in seen] == [1, 2, 3]
+    assert all(s[1] == 3 for s in seen)
