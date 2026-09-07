@@ -1,9 +1,9 @@
-"""Envelopa powercfg. Ordem SEMPRE: setacvalueindex -> setactive."""
+"""Envelopa powercfg. Ordem SEMPRE: set MIN -> set MAX -> setactive."""
 from __future__ import annotations
 
 import subprocess
 
-from turbocore.core_calc import parse_powercfg_ac_hex, percent_for_cores
+from turbocore.core_calc import min_percent_for_one_thread, parse_powercfg_ac_hex, percent_for_cores
 
 
 def _decode(data) -> str:
@@ -19,25 +19,32 @@ def _run(cmd: list[str]) -> None:
         raise RuntimeError(f"falhou {' '.join(cmd)}: {_decode(p.stderr).strip()[:300]}")
 
 
-def apply_percent(percent: int) -> None:
-    """Aplica X% e reativa o esquema. percent 1..100."""
+def _setParking(setting: str, percent: int) -> None:
     if not (1 <= int(percent) <= 100):
-        raise ValueError("percent deve estar em 1..100")
+        raise ValueError(f"{setting} deve estar em 1..100")
     _run(["powercfg", "-setacvalueindex", "scheme_current",
-          "sub_processor", "CPMAXCORES", str(int(percent))])
+          "sub_processor", setting, str(int(percent))])
+
+
+def apply_selection(chosen_cores: int, physical_cores: int, logical_count: int) -> tuple[int, int]:
+    """Aplica min=1 thread + max=escolha, depois reativa. Retorna (min_pct, max_pct).
+
+    O minimo em 1 thread e obrigatorio: com CPMINCORES em 100% o algoritmo de
+    parking fica desabilitado e o maximo sozinho nao tem efeito.
+    """
+    min_pct = min_percent_for_one_thread(logical_count)
+    max_pct = percent_for_cores(chosen_cores, physical_cores)
+    _setParking("CPMINCORES", min_pct)
+    _setParking("CPMAXCORES", max_pct)
     _run(["powercfg", "-setactive", "scheme_current"])
-
-
-def apply_core_limit(chosen_cores: int, physical_cores: int) -> int:
-    """Converte cores->% (ceil) e aplica. Retorna o % aplicado."""
-    pct = percent_for_cores(chosen_cores, physical_cores)
-    apply_percent(pct)
-    return pct
+    return (min_pct, max_pct)
 
 
 def release_all_cores() -> None:
-    """Libera explicitamente tudo: CPMAXCORES 100 + setactive (requisito Lembrar=OFF)."""
-    apply_percent(100)
+    """Libera explicitamente tudo: MIN 100 + MAX 100 + setactive."""
+    _setParking("CPMINCORES", 100)
+    _setParking("CPMAXCORES", 100)
+    _run(["powercfg", "-setactive", "scheme_current"])
 
 
 def query_current_percent() -> int:

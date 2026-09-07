@@ -37,6 +37,17 @@ def percent_for_cores(chosen_cores: int, physical_cores: int) -> int:
     return max(1, min(100, math.ceil(chosen_cores / physical_cores * 100)))
 
 
+def min_percent_for_one_thread(logical_count: int) -> int:
+    """% do CPMINCORES p/ 1 thread: ceil(100/logical), clamp 1..100.
+
+    1 thread = 1/logical do total -> ex. 36 logicos = ceil(2.77) = 3.
+    Sempre <= percent_for_cores(1, physical) em qualquer topologia.
+    """
+    if not isinstance(logical_count, int) or logical_count < 1:
+        raise ValueError("logical_count deve ser int >= 1")
+    return max(1, min(100, math.ceil(100 / logical_count)))
+
+
 def parse_powercfg_hex(output: str) -> int:
     """Extrai o ULTIMO 0xNN da saida e converte p/ decimal (generico).
 

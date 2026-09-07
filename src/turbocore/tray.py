@@ -12,7 +12,8 @@ def core_label(n: int) -> str:
 
 
 def on_pick_core(state: dict, n: int) -> None:
-    power.apply_core_limit(chosen_cores=n, physical_cores=state["physical"])
+    power.apply_selection(chosen_cores=n, physical_cores=state["physical"],
+                          logical_count=state["logical"])
     state["selected"] = n
     config.save_config({"remember": state["remember"], "cores": n})
     _refresh(state)

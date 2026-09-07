@@ -1,6 +1,12 @@
 import pytest
 
-from turbocore.core_calc import build_core_options, parse_powercfg_ac_hex, parse_powercfg_hex, percent_for_cores
+from turbocore.core_calc import (
+    build_core_options,
+    min_percent_for_one_thread,
+    parse_powercfg_ac_hex,
+    parse_powercfg_hex,
+    percent_for_cores,
+)
 
 
 def test_18_cores():
@@ -89,3 +95,27 @@ def test_parse_ac_prefere_linha_ac_en():
 def test_parse_ac_sem_linha_ac():
     with pytest.raises(ValueError):
         parse_powercfg_ac_hex("0x00000064 sem rotulo")
+
+
+def test_min_uma_thread_36_logicos():
+    # 1 thread de 36 = 2.77% -> teto 3
+    assert min_percent_for_one_thread(36) == 3
+
+
+def test_min_uma_thread_8_logicos():
+    assert min_percent_for_one_thread(8) == 13
+
+
+def test_min_uma_thread_1_logico():
+    assert min_percent_for_one_thread(1) == 100
+
+
+def test_min_nunca_acima_do_max():
+    # min(1 thread) <= max(1 core) em qualquer topologia
+    for physical, logical in [(18, 36), (6, 6), (4, 8), (2, 2), (8, 16)]:
+        assert min_percent_for_one_thread(logical) <= percent_for_cores(1, physical)
+
+
+def test_min_invalido():
+    with pytest.raises(ValueError):
+        min_percent_for_one_thread(0)

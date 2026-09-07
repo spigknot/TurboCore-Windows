@@ -30,9 +30,10 @@ def decide_initial_action(physical: int, cfg: dict) -> tuple[str, int | None]:
 
 def main() -> None:
     physical = cpu_info.get_physical_cores()
+    logical = cpu_info.get_logical_count()
     cfg = config.load_config()
     options = build_core_options(physical)
-    state = {"physical": physical,
+    state = {"physical": physical, "logical": logical,
              "options": options,
              "selected": cfg.get("cores") if cfg.get("cores") in options else None,
              "remember": bool(cfg.get("remember")),
@@ -41,7 +42,8 @@ def main() -> None:
     action, cores = decide_initial_action(physical, cfg)
     try:
         if action == "apply":
-            power.apply_core_limit(chosen_cores=cores, physical_cores=physical)
+            power.apply_selection(chosen_cores=cores, physical_cores=physical,
+                                  logical_count=logical)
             state["selected"] = cores
         else:
             power.release_all_cores()  # Lembrar=OFF (ou sem valor): libera explicitamente com 100
