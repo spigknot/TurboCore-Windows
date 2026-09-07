@@ -5,3 +5,8 @@ dist/
 build/
 *.spec
 .hermes/
+release/r2_config.json
+*.pem
+release_*.log
+sync_*.log
+release/generated/
