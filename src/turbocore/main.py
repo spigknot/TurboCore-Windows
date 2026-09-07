@@ -57,9 +57,7 @@ def main() -> None:
     except RuntimeError as e:
         # Sem privilegio p/ powercfg: abre o tray mesmo assim; usuario tenta de novo como admin.
         print(f"[TurboCore] aviso: nao apliquei limite inicial: {e}")
-    panel_mod.start_auto_check(
-        state, notify=lambda version: tray._notify(
-            state, f"Atualização {version} disponível — abra o painel."))
+    panel_mod.start_auto_check(state)
     run_event_loop(state,
                    icon_fn=lambda: tray.run_tray(state, load_icon()),
                    panel_fn=lambda: panel_mod.run_panel(state))

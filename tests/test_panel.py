@@ -4,21 +4,61 @@ from unittest.mock import patch
 from turbocore import panel
 
 
-def test_format_status_sem_limite():
-    assert panel.format_status(None, 18) == "Sem limite (todos os núcleos liberados)"
-
-
-def test_format_status_com_limite():
-    assert panel.format_status(10, 18, 56) == "Limite: 10 Cores (56%) — mín 1 thread"
-
-
-def test_format_status_singular():
-    assert panel.format_status(1, 18, 6) == "Limite: 1 Core (6%) — mín 1 thread"
-
-
 def test_verde_igual_sig():
     assert panel.UPDATE_GREEN == "#16833a"
     assert panel.UPDATE_GREEN_ACTIVE == "#116b30"
+
+
+def test_sobre_traz_versao_atual():
+    from turbocore import __version__
+    title, subtitle, version_line = panel.sobre_texts()
+    assert title == "TurboCore"
+    assert version_line == f"Versão: {__version__}"
+
+
+def test_manual_check_trava_concorrencia():
+    import threading
+    checker = panel.ManualCheck()
+    calls = []
+    started = threading.Event()
+
+    def slow_fetcher():
+        started.set()
+        import time
+        time.sleep(0.3)
+        return {"version": "20260907_009"}
+
+    with patch.object(panel.updater_client, "check_for_update",
+                      return_value={"update": True, "remote": "20260907_009"}):
+        assert checker.start("/x", lambda k, v: calls.append((k, v)), fetcher=slow_fetcher) is True
+        assert started.wait(timeout=5)
+        assert checker.start("/x", lambda k, v: calls.append((k, v)), fetcher=slow_fetcher) is False
+        deadline = __import__("time").monotonic() + 5
+        while checker.busy and __import__("time").monotonic() < deadline:
+            __import__("time").sleep(0.05)
+    assert calls == [("updated", "20260907_009")]
+    assert checker.busy is False
+
+
+def test_manual_check_sem_novidade_e_erro():
+    out = []
+    with patch.object(panel.updater_client, "check_for_update",
+                      return_value={"update": False}):
+        panel.ManualCheck().start("/x", lambda k, v: out.append((k, v)),
+                                  fetcher=lambda: {"version": "20260907_001"})
+        deadline = __import__("time").monotonic() + 5
+        while not out and __import__("time").monotonic() < deadline:
+            __import__("time").sleep(0.05)
+    assert out == [("uptodate", None)]
+    out.clear()
+    def boom():
+        raise Exception("dns")
+    checker = panel.ManualCheck()
+    checker.start("/x", lambda k, v: out.append((k, v)), fetcher=boom)
+    deadline = __import__("time").monotonic() + 5
+    while not out and __import__("time").monotonic() < deadline:
+        __import__("time").sleep(0.05)
+    assert out[0][0] == "error"
 
 
 def test_poll_update_encontra_nova():

@@ -1,50 +1,14 @@
 """Tray pystray: menu, checks e callbacks. Sem logica de deteccao (vem do main)."""
 from __future__ import annotations
 
-import threading
-
 import pystray
 from PIL import Image
 
-from turbocore import __version__, autostart, config, power, updater_client
+from turbocore import autostart, config, power
 
 
 def core_label(n: int) -> str:
     return "1 Core" if n == 1 else f"{n} Cores"
-
-
-def _notify(state: dict, message: str) -> None:
-    icon = state.get("icon")
-    if icon is not None:
-        try:
-            icon.notify(message, "TurboCore")
-        except Exception:
-            pass
-
-
-def _check_update_worker(state: dict) -> None:
-    try:
-        manifest = updater_client.fetch_sync_manifest()
-    except Exception as error:
-        _notify(state, f"Não foi possível verificar: {error}")
-        return
-    target = updater_client.install_dir()
-    status = updater_client.check_for_update(target, manifest)
-    if not status["update"]:
-        _notify(state, f"TurboCore já está atualizado ({status['local'] or '?'}).")
-        return
-    _notify(state, f"Atualização {status['remote']} encontrada — instalando...")
-    if updater_client.launch_updater(target):
-        _close_panel(state)
-        icon = state.get("icon")
-        if icon is not None:
-            icon.stop()
-    else:
-        _notify(state, "Atualizador não encontrado nesta instalação.")
-
-
-def on_check_update(state: dict) -> None:
-    threading.Thread(target=_check_update_worker, args=(state,), daemon=True).start()
 
 
 def on_open_panel(state: dict) -> None:
@@ -114,8 +78,6 @@ def _checked_picked(state: dict, n: int):
 def build_menu(state: dict):
     items = [
         pystray.MenuItem("Abrir painel", lambda *_a: on_open_panel(state), default=True),
-        pystray.MenuItem(f"TurboCore {__version__}", None, enabled=False),
-        pystray.MenuItem("Verificar atualização", lambda *_a: on_check_update(state)),
         pystray.Menu.SEPARATOR,
     ]
     for n in state["options"]:

@@ -33,6 +33,22 @@ def walk(w):
 walk(root)
 assert any("Atualizar para 20260907_009" in t for t in texts), texts
 assert any(t.startswith("Core") for t in texts) or True
+# sem Listbox-caixa: linhas diretas; Menubutton presente; Sobre abre
+import tkinter as tk
+
+def all_widgets(w):
+    yield w
+    for c in w.winfo_children():
+        yield from all_widgets(c)
+
+flat = list(all_widgets(root))
+assert not any(isinstance(w, tk.Listbox) for w in flat)
+assert any(isinstance(w, tk.Menubutton) for w in flat)
+panel.open_sobre(root)
+root.update()
+sWin = [w for w in root.winfo_children() if w.winfo_class() == "Toplevel"]
+assert sWin and sWin[0].title() == "Sobre", [w.winfo_class() for w in root.winfo_children()]
+sWin[0].destroy()
 root.destroy()
 state["panel"] = None
 print("SMOKE_PANEL_OK")

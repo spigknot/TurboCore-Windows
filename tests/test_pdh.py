@@ -34,4 +34,5 @@ def test_live_retorna_linhas_validas():
         mon.close()
     assert len(stats) == logical
     assert all(freq >= 0 for freq, _ in stats)
+    assert max(freq for freq, _ in stats) > 0, "frequência zerada = leitura quebrada"
     assert all(isinstance(parked, bool) for _, parked in stats)
