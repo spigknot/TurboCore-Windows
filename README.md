@@ -15,7 +15,7 @@ App de bandeja (tray) para limitar os núcleos da CPU em tempo real via `powercf
 
 ## Uso
 
-Duplo clique em `dist\TurboCore.exe` → ícone do chip na bandeja → botão-direito.
+Duplo clique em `dist\TurboCore\TurboCore.exe` → ícone do chip na bandeja → botão-direito.
 De baixo para cima: `Iniciar no boot`, `Lembrar escolha`, núcleos.
 
 ## Build
@@ -24,7 +24,7 @@ De baixo para cima: `Iniciar no boot`, `Lembrar escolha`, núcleos.
 build_exe.bat
 ```
 
-Requer Python 3.11+ (gera `dist\TurboCore.exe`, sem janela de console).
+Requer Python 3.11+ (gera `dist\TurboCore\TurboCore.exe`, sem janela de console).
 
 ## Desinstalar o boot
 
