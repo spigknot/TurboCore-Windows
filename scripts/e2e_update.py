@@ -1,11 +1,11 @@
-"""E2E: instala v1 velha num dir temp e atualiza via TurboCoreUpdater congelado + R2 real."""
+"""E2E: instala pacote velho/corrompido num dir temp e atualiza via updater congelado + R2 real."""
 import json
 import shutil
 import subprocess
 import tempfile
 from pathlib import Path
 
-PKG = Path("D:/Projetos/TurboCore/release/generated/20260907_001/package")
+PKG = Path("D:/Projetos/TurboCore/release/generated/20260907_002/package")
 EXE = Path("D:/Projetos/TurboCore/updater/bin/TurboCoreUpdater.exe")
 
 target = Path(tempfile.mkdtemp(prefix="tc-e2e-"))
@@ -14,13 +14,13 @@ shutil.copytree(PKG, target, dirs_exist_ok=True)
 (target / "TurboCore.exe").write_bytes(b"corrompido")
 shutil.rmtree(target / "_internal" / "assets")
 log = target.parent / "e2e.log"
-print("alvo:", target)
+print("alvo:", target, flush=True)
 
 flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 proc = subprocess.run(
     [str(EXE), "--target", str(target), "--pid", "0",
      "--log", str(log), "--relocated"],
-    capture_output=True, timeout=300)
+    capture_output=True, timeout=1200)
 print("exit:", proc.returncode)
 tail = log.read_text(encoding="utf-8").splitlines()[-4:]
 print("\n".join(tail))

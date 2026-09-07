@@ -176,3 +176,4 @@ Se QUALQUER passo divergir, atualize este arquivo no mesmo commit da versão.
 | Painel travando | leitura WMI (~1s) na thread da UI | thread leitora + fila, UI só drena |
 | Release parcial/draft no GitHub | assets junto do `create` + timeout | metadados primeiro, uploads separados |
 | `401/503` transitórios (R2/GitHub) | rede/API | repetir e conferir depois; nunca confiar em data, conferir SHA/nomes |
+| Diff gigante lento (~1 arq/s) | download serial de centenas de arquivos miúdos (tcl/tk) | normal em major; futuro: downloads paralelos no updater (o SIG usa ThreadPool x4) |
