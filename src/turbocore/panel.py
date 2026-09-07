@@ -13,6 +13,7 @@ from pathlib import Path
 
 from turbocore import __version__, updater_client
 from turbocore.core_calc import build_core_options
+from turbocore.nodeslider import NodeSlider
 from turbocore.pdh import FreqMonitor, aggregate_cores, format_core_row
 
 # Verde idêntico ao botão de update do SIG (style "Update.TButton").
@@ -22,6 +23,9 @@ UPDATE_GREEN_DISABLED = "#7ea98a"
 UPDATE_FG_DISABLED = "#f1f4f2"
 UPDATE_LABEL = "Atualizar"
 REFRESH_MS = 1000
+# Largura justa: linha do slider (240px) + margens, e espaço para o label
+# centralizado conviver com o botão Atualizar à direita sem sobreposição.
+PANEL_GEOMETRY = "300x720"
 
 
 def sobre_texts() -> tuple[str, str, str]:
@@ -43,9 +47,17 @@ def cores_label(selected: int | None, physical: int) -> str:
     return f"Cores: {selected if selected is not None else physical}"
 
 
-def dropdown_width(button_width: int) -> int:
-    """Largura do popup de núcleos: 30% mais estreito que o botão."""
-    return int(button_width * 0.7)
+def slider_index_for(options: list[int], selected: int | None) -> int:
+    """Índice inicial do slider: o aplicado; sem valor, tudo livre (último)."""
+    try:
+        return list(options).index(selected)
+    except ValueError:
+        return len(options) - 1
+
+
+def needs_apply(preview: int, selected: int | None) -> bool:
+    """Aplicar habilitado só quando o preview difere do aplicado."""
+    return preview != selected
 
 
 def step_line(started_at: str, label: str) -> str:
@@ -489,8 +501,7 @@ def open_panel(state: dict):
 
     root = tk.Tk()
     root.title("TurboCore")
-    # 18 cores (18 linhas ~16px) + log (altura fixa) + topo: janela mais alta.
-    root.geometry("380x720")
+    root.geometry(PANEL_GEOMETRY)
     root.resizable(False, False)
     state["panel"] = root
     _window_icon(root)
@@ -508,67 +519,77 @@ def open_panel(state: dict):
                                             ("disabled", UPDATE_GREEN_DISABLED)],
               foreground=[("disabled", UPDATE_FG_DISABLED)])
 
-    # Linha 1: Núcleos (esquerda) + update verde (direita, oculto sem novidade).
-    top = tk.Frame(root)
-    top.pack(fill="x", padx=10, pady=(10, 2))
-    from turbocore.tray import core_label
+    # Linha 1: "Cores: X" fixo no centro da tela + update verde à direita.
+    # Linha 2: slider centralizada. Linha 3: botão Aplicar compacto, centrado.
+    top = tk.Frame(root, height=34)
+    top.pack(fill="x", padx=10, pady=(10, 0))
+    top.pack_propagate(False)
 
     def apply_choice(n: int) -> None:
         from turbocore import tray as tray_mod  # tardio: tray importa este módulo
         tray_mod.on_pick_core(state, n)
-
-    nucleos_var = tk.StringVar(value=cores_label(state.get("selected"), physical))
-    nucleos_btn = tk.Menubutton(top, textvariable=nucleos_var, relief="raised",
-                                font=("Segoe UI", 10))
-    nucleos_btn.pack(side="left")
-    # Popup próprio (o tk.Menu não centraliza itens): linhas centralizadas e
-    # 30% mais estreito que o botão.
-    drop_state: dict = {"win": None}
-
-    def close_drop() -> None:
-        win = drop_state["win"]
-        drop_state["win"] = None
-        if win is not None:
+        log = state.get("log")
+        if log is not None:
             try:
-                win.destroy()
+                log.append(f"Núcleos limitados a {n}.")
             except Exception:
                 pass
 
-    def open_drop() -> None:
-        if drop_state["win"] is not None:
-            close_drop()
-            return
-        options = build_core_options(physical)
-        width = dropdown_width(max(nucleos_btn.winfo_width(), 1))
-        row_h = 24
-        x = nucleos_btn.winfo_rootx() + (nucleos_btn.winfo_width() - width) // 2
-        y = nucleos_btn.winfo_rooty() + nucleos_btn.winfo_height()
-        win = tk.Toplevel(root)
-        win.overrideredirect(True)
-        win.configure(background="#999999")
-        win.geometry(f"{width}x{len(options) * row_h + 2}+{x}+{y}")
-        for n in options:
-            lab = tk.Label(win, text=core_label(n), anchor="center",
-                           font=("Segoe UI", 10), background="#ffffff")
-            lab.pack(fill="x")
-            lab.bind("<Button-1>", lambda _e, n=n: (close_drop(), apply_choice(n)))
-        win.bind("<FocusOut>", lambda _e: close_drop())
-        win.bind("<Escape>", lambda _e: close_drop())
-        drop_state["win"] = win
+    options = build_core_options(physical)
+    preview_var = tk.StringVar()
+    preview_label = tk.Label(top, textvariable=preview_var, font=("Segoe UI", 10))
+    # place() com âncora no centro do frame: o botão Atualizar (à direita)
+    # não desloca o texto — ele fica fixo no centro da tela.
+    preview_label.place(relx=0.5, rely=0.5, anchor="center")
+
+    def current_option() -> int:
         try:
-            win.focus_force()
+            return options[int(round(float(scale.get())))]
+        except (ValueError, IndexError):
+            return options[-1]
+
+    def refresh_aplicar() -> None:
+        preview_var.set(f"Cores: {current_option()}")
+        try:
+            aplicar_btn.configure(
+                state="normal" if needs_apply(current_option(), state.get("selected"))
+                else "disabled")
         except Exception:
             pass
 
-    nucleos_btn.bind("<Button-1>", lambda _e: open_drop())
+    def on_scale(value: str) -> None:
+        # A NodeSlider já trava em nós e só dispara em mudança real de índice;
+        # aqui apenas reflete o preview e habilita/desabilita o Aplicar.
+        refresh_aplicar()
+
+    slider_row = tk.Frame(root)
+    slider_row.pack(fill="x", pady=(2, 0))
+    scale = NodeSlider(slider_row, count=len(options), length=240,
+                       command=on_scale)
+    scale.pack(anchor="center")
+    try:
+        start_idx = slider_index_for(options, state.get("selected"))
+        scale.set(start_idx)
+        scale.set_applied(start_idx)
+    except Exception:
+        pass
+
+    # Botão do tamanho exato do texto (padding mínimo, tema clam).
+    style.configure("Apply.TButton", padding=(8, 1))
+    aplicar_row = tk.Frame(root)
+    aplicar_row.pack(fill="x", pady=(2, 4))
+    aplicar_btn = ttk.Button(aplicar_row, text="Aplicar", style="Apply.TButton",
+                             command=lambda: apply_choice(current_option()))
+    aplicar_btn.pack(anchor="center")
+    refresh_aplicar()
 
     update_button = ttk.Button(top, text="", style="Update.TButton")
-    update_button.pack(side="right")
-    update_button.pack_forget()
+    update_button.place(relx=1.0, rely=0.5, anchor="e")
+    update_button.place_forget()
 
     def show_update(version: str) -> None:
         update_button.configure(text=UPDATE_LABEL)
-        update_button.pack(side="right")
+        update_button.place(relx=1.0, rely=0.5, anchor="e")
 
     def on_update_click():
         handle_update_click(
@@ -581,10 +602,10 @@ def open_panel(state: dict):
 
     update_button.configure(command=on_update_click)
 
-    # Lista direta, sem caixa: um Label por núcleo, mesma margem da linha 1.
+    # Lista direta, sem caixa: um Label por núcleo, linhas centralizadas.
     core_labels: list = []
     for _ in range(physical):
-        label = tk.Label(root, text="", font=("Consolas", 10), anchor="w")
+        label = tk.Label(root, text="", font=("Consolas", 10), anchor="center")
         label.pack(fill="x", padx=10)
         core_labels.append(label)
     monitor = FreqMonitor(logical)
@@ -650,7 +671,7 @@ def open_panel(state: dict):
             messagebox.showinfo("TurboCore", "A verificação já está em andamento.")
             return
         set_check_enabled(False)
-        activity.begin("update:check", "Verificando atualizações")
+        activity.begin("update:check", "Buscando updates")
 
     import queue as queue_mod
     stats_queue: queue_mod.Queue = queue_mod.Queue(maxsize=1)
@@ -692,7 +713,16 @@ def open_panel(state: dict):
             pending = state.get("pending_update")
             if pending and not update_button.winfo_ismapped():
                 show_update(pending)
-            nucleos_var.set(cores_label(state.get("selected"), physical))
+            # Aplicar acompanha o aplicado (ex.: mudança pela tray); o slider
+            # em si não é movido para não brigar com o arraste do usuário.
+            try:
+                applied_idx = slider_index_for(options, state.get("selected"))
+                scale.set_applied(applied_idx)
+                aplicar_btn.configure(
+                    state="normal" if needs_apply(current_option(), state.get("selected"))
+                    else "disabled")
+            except Exception:
+                pass
         except Exception:
             pass
         finally:

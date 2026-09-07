@@ -14,32 +14,46 @@ def test_botao_update_clones_sig():
     assert panel.UPDATE_FG_DISABLED == "#f1f4f2"
 
 
-def test_dropdown_30_por_cento_mais_estreito():
-    assert panel.dropdown_width(200) == 140
-    assert panel.dropdown_width(100) == 70
+def test_painel_largura_da_slider():
+    # Estreito: linha do slider (240px) + margens, sem folga de 513.
+    assert panel.PANEL_GEOMETRY == "300x720"
+
+
+def test_slider_index_para_selecionado():
+    options = [1, 2, 4, 6, 8, 10, 12, 14, 16, 18]
+    assert panel.slider_index_for(options, 10) == 5
+    assert panel.slider_index_for(options, 1) == 0
+    assert panel.slider_index_for(options, None) == len(options) - 1
+    assert panel.slider_index_for(options, 999) == len(options) - 1
+
+
+def test_aplicar_somente_quando_preview_difere():
+    assert panel.needs_apply(8, 10) is True
+    assert panel.needs_apply(10, 10) is False
+    assert panel.needs_apply(18, None) is True
 
 
 def test_step_line_formato_sig():
-    assert panel.step_line("14:19:29", "Verificando atualizações") == \
-        "14:19:29  Verificando atualizações\n"
+    assert panel.step_line("14:19:29", "Buscando updates") == \
+        "14:19:29  Buscando updates\n"
 
 
 def test_finished_step_sem_novidade():
-    assert panel.finished_step_line("14:19:29", "Verificando atualizações", 1.5,
+    assert panel.finished_step_line("14:19:29", "Buscando updates", 1.5,
                                     suffix="- Não tem!") == \
-        "14:19:29  Verificando atualizações - Não tem! (1.5s)\n"
+        "14:19:29  Buscando updates - Não tem! (1.5s)\n"
 
 
 def test_finished_step_encontrada():
-    assert panel.finished_step_line("14:19:29", "Verificando atualizações", 2.0,
+    assert panel.finished_step_line("14:19:29", "Buscando updates", 2.0,
                                     suffix="- Encontrada!") == \
-        "14:19:29  Verificando atualizações - Encontrada! (2.0s)\n"
+        "14:19:29  Buscando updates - Encontrada! (2.0s)\n"
 
 
 def test_finished_step_erro():
-    assert panel.finished_step_line("14:19:29", "Verificando atualizações", 0.4,
+    assert panel.finished_step_line("14:19:29", "Buscando updates", 0.4,
                                     error="dns") == \
-        "14:19:29  Verificando atualizações ERRO (0.4s): dns\n"
+        "14:19:29  Buscando updates ERRO (0.4s): dns\n"
 
 
 def test_sync_file_line_progresso_e_concluido():
@@ -91,13 +105,13 @@ def test_activity_log_caixa_e_passos(tk_root):
     box = tk.Text(tk_root)
     activity = panel.ActivityLog(tk_root, box)
     activity.append("Painel aberto.")
-    activity.begin("update:check", "Verificando atualizações")
+    activity.begin("update:check", "Buscando updates")
     activity.finish("update:check", 1.5, suffix="- Não tem!")
     activity._drain()  # o drain roda na UI thread; teste chama direto
     content = box.get("1.0", "end")
     assert "Painel aberto." in content
     # A etapa não deve gerar uma segunda linha: reescrita na mesma linha.
-    assert content.count("Verificando atualizações") == 1
+    assert content.count("Buscando updates") == 1
     assert "- Não tem! (1.5s)" in content
     # Início vira verde no fim.
     linha = next(i for i in range(1, int(box.index("end-1c").split(".")[0]) + 1)

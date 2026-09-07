@@ -5,6 +5,7 @@ import time
 sys.path.insert(0, "D:/Projetos/TurboCore/src")
 
 from turbocore import panel
+from turbocore.nodeslider import NodeSlider
 
 state = {"physical": 18, "logical": 36,
          "options": [1, 2, 4, 6, 8, 10, 12, 14, 16, 18],
@@ -33,8 +34,9 @@ def walk(w):
 walk(root)
 assert any(t == "Atualizar" for t in texts), texts
 assert any(t.startswith("Core") for t in texts) or True
-# sem Listbox-caixa: linhas diretas; Menubutton presente; Sobre abre
+# sem Listbox-caixa: linhas diretas; slider + Aplicar presentes; Sobre abre
 import tkinter as tk
+from tkinter import ttk
 
 def all_widgets(w):
     yield w
@@ -43,7 +45,19 @@ def all_widgets(w):
 
 flat = list(all_widgets(root))
 assert not any(isinstance(w, tk.Listbox) for w in flat)
-assert any(isinstance(w, tk.Menubutton) for w in flat)
+assert not any(isinstance(w, tk.Menubutton) for w in flat), "dropdown removido"
+assert not any(isinstance(w, tk.Menu) and w is not root.nametowidget(root.cget("menu"))
+               for w in flat), "popup do dropdown removido"
+scales = [w for w in flat if isinstance(w, NodeSlider)]
+assert len(scales) == 1, "slider de nós único"
+assert not any(isinstance(w, ttk.Scale) for w in flat), "ttk.Scale antigo removido"
+assert any(isinstance(w, ttk.Button) and w.cget("text") == "Aplicar" for w in flat)
+# preview inicial = aplicado (10) e Aplicar desabilitado (nada a aplicar)
+assert any("Cores: 10" in t for t in texts), texts
+aplicar = next(w for w in flat if isinstance(w, ttk.Button) and w.cget("text") == "Aplicar")
+assert str(aplicar.cget("state")) == "disabled", aplicar.cget("state")
+# geometria estreita (justa para a linha do slider)
+assert root.geometry().startswith("300x720"), root.geometry()
 # Caixa de log presente e registrada no state (fluxo do update).
 assert any(isinstance(w, tk.Text) for w in flat), "caixa de log ausente"
 assert state.get("log") is not None
