@@ -61,10 +61,20 @@ R2 turbocore-windows/
 - Sem chaves reais embutidas no binário (só a chave PÚBLICA do manifesto).
 - Builds do updater determinísticos p/ o gate de hash.
 
-## 5. ❓ Perguntas abertas (bloqueiam a Fase 3)
+## 5. Revisão dos .md do SIG (aplicada)
 
-1. **URL pública do R2**: qual o `pub-*.r2.dev` do bucket `turbocore-windows`
-   (ou prefere domínio próprio)? Posso tentar descobrir via API token — ou você habilita?
-2. **Local de instalação**: confirma `%LOCALAPPDATA%\TurboCore` sem admin?
-3. **Inno Setup 6**: instalo via `winget` agora, ou o offline fica p/ depois?
-4. **Releases**: deletar a anterior a cada versão (só a atual, como no SIG)?
+- `UPDATE.md` + `installer-updater-pitfalls.md`: já incorporados na Fase 1–3
+  (transações fora do pai, lock no target, `--package`, diff por hash, UA
+  próprio, uploads `gh` separados, logs fora do git, tolerar componentes novos).
+- `docs/agents/validation-output.md`: já conforme (linhas `PASS:`, exit codes
+  propagados, logs em arquivo, nunca commitados).
+- `release/INSTALLER.md`: espelhado no `installer/turbocore.iss` (`users-modify`,
+  atalhos app+updater). Checklist de teste silencioso
+  (`setup.exe /VERYSILENT /DIR=<temp>`) entra no procedimento da próxima release.
+- `docs/agents/README.md`: adotado o princípio "fonte da verdade única"
+  (`docs/update-pipeline.md` não duplica o SIG).
+- `varredura-dependencias`: técnica aplicada (`requirements.txt` agora declara
+  boto3/cryptography/pywin32 do build); sem lixo encontrado.
+- `servidores_e_endpoints.txt` → lição aplicada: endpoints centralizados por
+  módulo + `test_cross_constants.py` como vacina anti-drift entre os 3
+  componentes congelados (não podem se importar).

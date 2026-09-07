@@ -2,3 +2,7 @@ pystray==0.19.5
 Pillow>=11.3.0
 pytest==8.3.4
 pyinstaller==6.10.0
+# Release tooling (ambiente Python 3.11 do build):
+boto3>=1.28
+cryptography>=41
+pywin32>=306
