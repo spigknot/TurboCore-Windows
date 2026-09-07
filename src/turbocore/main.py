@@ -1,23 +1,9 @@
 """Entrada do app: deteccao -> decisao inicial -> tray."""
 from __future__ import annotations
 
-from pathlib import Path
-
-from PIL import Image
-
 from turbocore import autostart, config, cpu_info, power, tray
 from turbocore.core_calc import build_core_options
-
-
-def load_icon() -> Image.Image:
-    here = Path(__file__).resolve()
-    for cand in [here.parent.parent.parent / "assets" / "chip.ico",
-                 here.parent / "chip.ico",
-                 Path("assets/chip.ico")]:
-        if cand.exists():
-            return Image.open(cand)
-    # fallback: quadrado simples p/ nunca quebrar o boot
-    return Image.new("RGB", (64, 64), (16, 122, 87))
+from turbocore.icons import load_icon
 
 
 def decide_initial_action(physical: int, cfg: dict) -> tuple[str, int | None]:
