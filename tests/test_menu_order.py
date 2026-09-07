@@ -7,10 +7,12 @@ def test_menu_build_ordem_boot_por_ultimo():
           "selected": 10, "remember": True, "boot": False}
     menu = tray.build_menu(st)  # nao deve levantar ValueError do pystray
     names = [getattr(i, "text", "SEP") for i in menu.items]
-    assert names[0].startswith("TurboCore ")
-    assert names[1] == "Verificar atualização"
-    assert names[3] == "1 Core"
-    assert names[12] == "18 Cores"
+    assert names[0] == "Abrir painel"
+    assert menu.items[0].default is True
+    assert names[1].startswith("TurboCore ")
+    assert names[2] == "Verificar atualização"
+    assert names[4] == "1 Core"
+    assert names[13] == "18 Cores"
     assert names[-1] == "Sair"
     assert names[-2] == "Iniciar no boot"
     assert names[-3] == "Lembrar escolha"

@@ -87,3 +87,23 @@ def test_check_update_falha_de_rede_avisa():
     with patch.object(tray.updater_client, "fetch_sync_manifest", side_effect=Exception("dns")):
         tray._check_update_worker(st)
     assert any("Não foi possível verificar" in n for n in st["icon"].notes)
+
+
+def test_open_panel_sinaliza_evento():
+    import threading
+    st = _state()
+    st["panel_request"] = threading.Event()
+    tray.on_open_panel(st)
+    assert st["panel_request"].is_set()
+
+
+def test_quit_para_icone_e_fecha_painel():
+    st = _state()
+    st["icon"] = _FakeIcon()
+    closed = []
+    st["panel"] = type("P", (), {"destroy": lambda self: closed.append(1),
+                                 "winfo_exists": lambda self: True})()
+    tray.on_quit(st, st["icon"])
+    assert st["icon"].stopped is True
+    assert closed == [1]
+    assert st["panel"] is None

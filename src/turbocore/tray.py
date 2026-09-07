@@ -35,6 +35,7 @@ def _check_update_worker(state: dict) -> None:
         return
     _notify(state, f"Atualização {status['remote']} encontrada — instalando...")
     if updater_client.launch_updater(target):
+        _close_panel(state)
         icon = state.get("icon")
         if icon is not None:
             icon.stop()
@@ -44,6 +45,31 @@ def _check_update_worker(state: dict) -> None:
 
 def on_check_update(state: dict) -> None:
     threading.Thread(target=_check_update_worker, args=(state,), daemon=True).start()
+
+
+def on_open_panel(state: dict) -> None:
+    """Sinaliza a thread principal p/ abrir o painel (Tk só roda na main)."""
+    event = state.get("panel_request")
+    if event is not None:
+        event.set()
+
+
+def _close_panel(state: dict) -> None:
+    panel = state.get("panel")
+    state["panel"] = None
+    if panel is not None:
+        try:
+            panel.destroy()
+        except Exception:
+            pass
+
+
+def on_quit(state: dict, icon, _item=None) -> None:
+    _close_panel(state)
+    try:
+        icon.stop()
+    except Exception:
+        pass
 
 
 def on_pick_core(state: dict, n: int) -> None:
@@ -87,6 +113,7 @@ def _checked_picked(state: dict, n: int):
 
 def build_menu(state: dict):
     items = [
+        pystray.MenuItem("Abrir painel", lambda *_a: on_open_panel(state), default=True),
         pystray.MenuItem(f"TurboCore {__version__}", None, enabled=False),
         pystray.MenuItem("Verificar atualização", lambda *_a: on_check_update(state)),
         pystray.Menu.SEPARATOR,
@@ -102,7 +129,7 @@ def build_menu(state: dict):
     items.append(pystray.MenuItem(
         "Iniciar no boot", lambda *_a: on_toggle_boot(state),
         checked=lambda _item: state["boot"]))
-    items.append(pystray.MenuItem("Sair", lambda icon, _item: icon.stop()))
+    items.append(pystray.MenuItem("Sair", lambda icon, _item: on_quit(state, icon)))
     return pystray.Menu(*items)
 
 
