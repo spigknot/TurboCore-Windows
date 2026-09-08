@@ -238,6 +238,16 @@ def handle_update_click(state, destroy_fn, stop_fn, error_fn,
     pending = state.get("pending_update")
     log = state.get("log")
     target = updater_client.install_dir()
+    # Trava de duplo-clique: um segundo updater concorrente no mesmo target
+    # intercalava applies/rollbacks (23:17 do log real). Roda na UI thread.
+    if state.get("updating"):
+        if log is not None:
+            try:
+                log.append("Atualização já em andamento.", "warning")
+            except Exception:
+                pass
+        return False
+    state["updating"] = True
     if log is not None:
         log.append(f"Atualização {pending} iniciada.", "warning")
     if set_busy is not None:
@@ -268,6 +278,12 @@ def handle_update_click(state, destroy_fn, stop_fn, error_fn,
         result = outcome.pop("result", None)
         if result is None:
             return  # recolhido 2x (tick + watchdog): nada a fazer
+        # Libera a trava mesmo no sucesso: se o teardown não matar o processo
+        # (stop quebrado), o usuário ainda pode tentar de novo.
+        try:
+            state.pop("updating", None)
+        except Exception:
+            pass
         kind, payload = result
         try:
             if kind == "ready":

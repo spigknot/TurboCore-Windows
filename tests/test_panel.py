@@ -170,6 +170,41 @@ def test_sync_removals_so_orfaos(tmp_path):
     assert removals == ["velho.dll"], removals
 
 
+def test_update_click_ignora_segundo_clique(tmp_path, monkeypatch):
+    """Vacina do 23:17: dois updaters concorrentes intercalavam apply/rollback.
+
+    Com update em voo, o segundo clique retorna False sem disparar nada; após
+    o desfecho com erro, a trava libera e o retry volta a retornar True.
+    """
+    import time
+    from turbocore import updater_client
+    target = tmp_path / "app"
+    target.mkdir()
+    monkeypatch.setattr(updater_client, "install_dir", lambda: target)
+
+    def boom_fetch():
+        raise Exception("dns")
+
+    monkeypatch.setattr(updater_client, "fetch_sync_manifest", boom_fetch)
+    destroyed, stopped, errors = [], [], []
+    state = {"pending_update": "20260907_009", "log": panel._NullLog()}
+    assert panel.handle_update_click(
+        state, lambda: destroyed.append(1), lambda: stopped.append(1),
+        errors.append) is True
+    assert panel.handle_update_click(
+        state, lambda: destroyed.append(1), lambda: stopped.append(1),
+        errors.append) is False  # em voo: ignorado, sem nova thread
+    deadline = time.monotonic() + 15
+    while "update_settle" not in state and time.monotonic() < deadline:
+        time.sleep(0.02)
+    assert panel.poll_update_settle(state) is True
+    assert errors and "dns" in errors[0]
+    assert destroyed == [] and stopped == []
+    assert panel.handle_update_click(
+        state, lambda: destroyed.append(1), lambda: stopped.append(1),
+        errors.append) is True  # trava liberou: retry permitido
+
+
 def test_update_teardown_somente_via_recolhimento_ui(tmp_path, monkeypatch):
     """Vacina do PID que nunca morria: destroy/stop vinham da thread de download.
 

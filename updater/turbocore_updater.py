@@ -579,7 +579,10 @@ def worker_diff(target: Path, pid: int, log_path: Path, *, force: bool = False,
                 progress=None) -> None:
     target, log_path = target.resolve(), log_path.resolve()
     _log(log_path, f"TurboCoreUpdater diff: target={target} pid={pid}")
-    _recover_interrupted(target, log_path)
+    # Leituras (rede/disco) fora do lock; tudo que TOCA estado compartilhado
+    # (recover de transações alheias, staged, target) vai DENTRO do lock —
+    # senão dois updaters simultâneos revertem/apagam o trabalho um do outro
+    # (foi o 23:17 do log: applies/rollbacks intercalados).
     manifest = fetch_sync_manifest()
     remote = str(manifest["version"])
     local = installed_version(target)
@@ -593,10 +596,12 @@ def worker_diff(target: Path, pid: int, log_path: Path, *, force: bool = False,
     entries = {p: e for p, e in entries.items() if p != UPDATER_EXE_NAME}
     plan = classify_sync_files(target, entries)
     _log(log_path, f"Baixar={len(plan['download'])} manter={len(plan['keep'])}")
-    transaction = Path(tempfile.mkdtemp(prefix=".tc-updater-", dir=str(_transaction_root())))
-    _journal_write(transaction, {"status": "started", "version": remote})
+    transaction = None
     try:
         with installation_lock(target):
+            _recover_interrupted(target, log_path)
+            transaction = Path(tempfile.mkdtemp(prefix=".tc-updater-", dir=str(_transaction_root())))
+            _journal_write(transaction, {"status": "started", "version": remote})
             staged = transaction / "staged"
             for index, path in enumerate(plan["download"], 1):
                 entry = entries[path]
@@ -620,27 +625,30 @@ def worker_diff(target: Path, pid: int, log_path: Path, *, force: bool = False,
         _journal_write(transaction, {"status": "done", "version": remote})
         _log(log_path, "Atualização aplicada e validada.")
     except Exception:
-        try:
-            _rollback(transaction, target, log_path)
-        except Exception as rollback_error:
-            _log(log_path, f"Falha crítica no rollback: {rollback_error}")
+        if transaction is not None:
+            try:
+                _rollback(transaction, target, log_path)
+            except Exception as rollback_error:
+                _log(log_path, f"Falha crítica no rollback: {rollback_error}")
         raise
     finally:
-        shutil.rmtree(transaction, ignore_errors=True)
+        if transaction is not None:
+            shutil.rmtree(transaction, ignore_errors=True)
 
 
 def worker_full(zip_path: Path, target: Path, pid: int, log_path: Path, *,
                 wait_timeout: int = 120, startup_timeout: int = 12) -> None:
     target, log_path = target.resolve(), log_path.resolve()
     _log(log_path, f"TurboCoreUpdater full: zip={zip_path} target={target}")
-    _recover_interrupted(target, log_path)
     kind = validate_zip(zip_path)
     assert kind == "full"
     remote = zip_version(zip_path)
-    transaction = Path(tempfile.mkdtemp(prefix=".tc-updater-", dir=str(_transaction_root())))
-    _journal_write(transaction, {"status": "started", "version": remote})
+    transaction = None
     try:
         with installation_lock(target):
+            _recover_interrupted(target, log_path)
+            transaction = Path(tempfile.mkdtemp(prefix=".tc-updater-", dir=str(_transaction_root())))
+            _journal_write(transaction, {"status": "started", "version": remote})
             staged = transaction / "staged"
             _extract_zip(zip_path, staged)
             removals = _target_tree(target) - {p.relative_to(staged).as_posix()
@@ -654,13 +662,15 @@ def worker_full(zip_path: Path, target: Path, pid: int, log_path: Path, *,
         _journal_write(transaction, {"status": "done", "version": remote})
         _log(log_path, "Instalação completa aplicada e validada.")
     except Exception:
-        try:
-            _rollback(transaction, target, log_path)
-        except Exception as rollback_error:
-            _log(log_path, f"Falha crítica no rollback: {rollback_error}")
+        if transaction is not None:
+            try:
+                _rollback(transaction, target, log_path)
+            except Exception as rollback_error:
+                _log(log_path, f"Falha crítica no rollback: {rollback_error}")
         raise
     finally:
-        shutil.rmtree(transaction, ignore_errors=True)
+        if transaction is not None:
+            shutil.rmtree(transaction, ignore_errors=True)
 
 
 def worker_apply_staged(staged: Path, removals_file: Path, version: str,
@@ -674,7 +684,6 @@ def worker_apply_staged(staged: Path, removals_file: Path, version: str,
     """
     target, log_path = target.resolve(), log_path.resolve()
     _log(log_path, f"TurboCoreUpdater apply-staged: version={version} target={target}")
-    _recover_interrupted(target, log_path)
     removals = set()
     if removals_file and Path(removals_file).is_file():
         for line in Path(removals_file).read_text(encoding="utf-8").splitlines():
@@ -697,10 +706,14 @@ def worker_apply_staged(staged: Path, removals_file: Path, version: str,
     removals -= staged_names
     removals.discard(UPDATER_EXE_NAME)
     removals.discard(UPDATE_LOCK_NAME)
-    transaction = Path(tempfile.mkdtemp(prefix=".tc-updater-", dir=str(_transaction_root())))
-    _journal_write(transaction, {"status": "started", "version": version})
+    transaction = None
     try:
         with installation_lock(target):
+            # Recover DENTRO do lock: fora dele, dois updaters simultâneos
+            # revertem/apagam as transações um do outro (23:17 do log real).
+            _recover_interrupted(target, log_path)
+            transaction = Path(tempfile.mkdtemp(prefix=".tc-updater-", dir=str(_transaction_root())))
+            _journal_write(transaction, {"status": "started", "version": version})
             _wait_for_pid(pid, wait_timeout, log_path)
             _terminate_stray_processes(target / APP_EXE_NAME, log_path)
             _apply_staged(staged, target, transaction, removals, log_path)
@@ -711,13 +724,15 @@ def worker_apply_staged(staged: Path, removals_file: Path, version: str,
         _journal_write(transaction, {"status": "done", "version": version})
         _log(log_path, "Atualização aplicada e validada.")
     except Exception:
-        try:
-            _rollback(transaction, target, log_path)
-        except Exception as rollback_error:
-            _log(log_path, f"Falha crítica no rollback: {rollback_error}")
+        if transaction is not None:
+            try:
+                _rollback(transaction, target, log_path)
+            except Exception as rollback_error:
+                _log(log_path, f"Falha crítica no rollback: {rollback_error}")
         raise
     finally:
-        shutil.rmtree(transaction, ignore_errors=True)
+        if transaction is not None:
+            shutil.rmtree(transaction, ignore_errors=True)
 
 
 def select_full_release_asset(release: dict) -> dict:

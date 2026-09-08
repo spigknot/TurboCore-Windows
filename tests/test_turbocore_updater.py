@@ -280,6 +280,47 @@ def test_worker_apply_staged_ignora_removal_sobreposta(tmp_path, monkeypatch):
     assert "validada" in log.read_text(encoding="utf-8")
 
 
+def test_segundo_updater_falha_sem_tocar_transacao_alheia(tmp_path, monkeypatch):
+    """Vacina do 23:17 do log real: dois updaters intercalavam apply/rollback.
+
+    O recover de transações interrompidas roda DENTRO do lock: com lock
+    fresco de outro run, o worker recusa ("outra atualização em andamento")
+    sem reverter nem apagar a transação alheia — e sem NameError no
+    except/finally (transaction ainda é None).
+    """
+    import sys
+    monkeypatch.setattr(sys, "frozen", False, raising=False)
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "local"))
+    target = _fake_target(tmp_path / "app")
+    antes = sorted(p.relative_to(target).as_posix()
+                   for p in target.rglob("*") if p.is_file())
+    # Lock fresco de um run concorrente.
+    (target / tu.UPDATE_LOCK_NAME).write_text("pid=99999")
+    # Transação interrompida de outro run (seria revertida+apagada pelo recover).
+    alheia = tu._transaction_root() / ".tc-updater-alheia"
+    (alheia / "backup").mkdir(parents=True)
+    (alheia / "journal.json").write_text(json.dumps({"status": "applied", "added": []}))
+    (alheia / "backup" / "sentinela.txt").write_bytes(b"backup-alheio")
+    staged = tmp_path / "staged"
+    staged.mkdir()
+    (staged / "TurboCore.exe").write_bytes(b"app-v3")
+    (staged / "build-info.json").write_text(json.dumps({"version": "20260907_003"}))
+    removals = tmp_path / "removals.txt"
+    removals.write_text("")
+    launched = []
+    monkeypatch.setattr(tu, "_launch_and_verify", lambda exe, t, log, **k: launched.append(exe))
+    log = tmp_path / "t.log"
+    with pytest.raises(tu.UpdateError, match="outra atualização em andamento"):
+        tu.worker_apply_staged(staged, removals, "20260907_003", target, 0, log,
+                               wait_timeout=1, startup_timeout=1)
+    assert launched == []
+    assert (alheia / "journal.json").is_file(), "transação alheia foi tocada"
+    assert (alheia / "backup" / "sentinela.txt").read_bytes() == b"backup-alheio"
+    depois = sorted(p.relative_to(target).as_posix()
+                    for p in target.rglob("*") if p.is_file())
+    assert depois == sorted(antes + [tu.UPDATE_LOCK_NAME]), (antes, depois)
+
+
 def test_worker_diff_nao_auto_substitui_updater(tmp_path, monkeypatch):
     """O updater em execução NUNCA é substituído pelo diff (self-exclusão)."""
     import sys
