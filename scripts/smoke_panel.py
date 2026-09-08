@@ -55,11 +55,19 @@ assert any(isinstance(w, ttk.Button) and str(w.cget("image")) != "" for w in fla
     "botão Aplicar (raio) ausente"
 assert not any(isinstance(w, ttk.Button) and w.cget("text") == "Aplicar" for w in flat), \
     "botão Aplicar ainda com texto"
-# preview inicial = aplicado (10) e Aplicar desabilitado (nada a aplicar)
+# preview inicial = aplicado (10); botão sempre normal/clicável (no-op se igual)
 assert any("Cores: 10" in t for t in texts), texts
 aplicar = next(w for w in flat if isinstance(w, ttk.Button) and str(w.cget("image")) != "")
-assert str(aplicar.cget("state")) == "disabled", aplicar.cget("state")
+assert str(aplicar.cget("state")) == "normal", aplicar.cget("state")
 assert aplicar.winfo_reqwidth() == aplicar.winfo_reqheight(), "botão raio quadrado"
+# clique no mesmo valor: nenhum comando, só loga "já é"
+aplicar.invoke()
+root.update()
+time.sleep(0.3)
+root.update()
+logbox = next(w for w in flat if isinstance(w, tk.Text))
+logcontent = logbox.get("1.0", "end")
+assert "Núcleos ativos já é 10." in logcontent, logcontent
 # geometria estreita (justa para a linha do slider)
 assert root.geometry().startswith("300x720"), root.geometry()
 # Caixa de log presente e registrada no state (fluxo do update).

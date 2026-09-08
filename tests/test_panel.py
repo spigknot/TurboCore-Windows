@@ -33,6 +33,23 @@ def test_aplicar_somente_quando_preview_difere():
     assert panel.needs_apply(18, None) is True
 
 
+def test_apply_outcome_mudanca():
+    msg, run = panel.apply_outcome(18, 8, 18)
+    assert (msg, run) == ("Núcleos ativos 8 -> 18.", True)
+    msg, run = panel.apply_outcome(4, 18, 18)
+    assert (msg, run) == ("Núcleos ativos 18 -> 4.", True)
+
+
+def test_apply_outcome_mesmo_valor_noop():
+    msg, run = panel.apply_outcome(4, 4, 18)
+    assert (msg, run) == ("Núcleos ativos já é 4.", False)
+
+
+def test_apply_outcome_sem_aplicado_usa_fisico():
+    msg, run = panel.apply_outcome(4, None, 18)
+    assert (msg, run) == ("Núcleos ativos 18 -> 4.", True)
+
+
 def test_step_line_formato_sig():
     assert panel.step_line("14:19:29", "Buscando updates") == \
         "14:19:29  Buscando updates\n"
@@ -105,14 +122,14 @@ def test_activity_log_caixa_e_passos(tk_root):
     box = tk.Text(tk_root)
     activity = panel.ActivityLog(tk_root, box)
     activity.append("Painel aberto.", "vad_total")
-    activity.append("Núcleos limitados a 8.", "vad_total")
+    activity.append("Núcleos ativos 8 -> 10.", "vad_total")
     activity.begin("update:check", "Buscando updates")
     activity.finish("update:check", 1.5, suffix="- Não tem!")
     activity._drain()  # o drain roda na UI thread; teste chama direto
     content = box.get("1.0", "end")
     assert "Painel aberto." in content
     # Mensagens de sucesso simples também saem em verde (vad_total).
-    for needle in ("Painel aberto.", "Núcleos limitados a 8."):
+    for needle in ("Painel aberto.", "Núcleos ativos 8 -> 10."):
         linha_ok = next(i for i in range(1, int(box.index("end-1c").split(".")[0]) + 1)
                         if needle in box.get(f"{i}.0", f"{i}.end"))
         assert "vad_total" in box.tag_names(f"{linha_ok}.1"), (needle, box.tag_names(f"{linha_ok}.1"))

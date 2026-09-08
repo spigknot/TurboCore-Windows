@@ -83,8 +83,21 @@ def slider_index_for(options: list[int], selected: int | None) -> int:
 
 
 def needs_apply(preview: int, selected: int | None) -> bool:
-    """Aplicar habilitado só quando o preview difere do aplicado."""
+    """Há comando a executar: preview difere do aplicado."""
     return preview != selected
+
+
+def apply_outcome(preview: int, selected: int | None,
+                  physical: int) -> tuple[str, bool]:
+    """Mensagem de log + se executa comandos. Pura (testável).
+
+    Mesmo valor => no-op com "já é". Sem aplicado (tudo livre) => o
+    anterior é o total físico.
+    """
+    if not needs_apply(preview, selected):
+        return f"Núcleos ativos já é {preview}.", False
+    old = selected if selected is not None else physical
+    return f"Núcleos ativos {old} -> {preview}.", True
 
 
 def step_line(started_at: str, label: str) -> str:
@@ -645,11 +658,15 @@ def open_panel(state: dict):
 
     def apply_choice(n: int) -> None:
         from turbocore import tray as tray_mod  # tardio: tray importa este módulo
-        tray_mod.on_pick_core(state, n)
+        # Botão sempre clicável e com a mesma aparência: mesmo valor => no-op
+        # (só loga "já é"), sem executar powercfg.
+        message, run = apply_outcome(n, state.get("selected"), physical)
+        if run:
+            tray_mod.on_pick_core(state, n)
         log = state.get("log")
         if log is not None:
             try:
-                log.append(f"Núcleos limitados a {n}.", "vad_total")
+                log.append(message, "vad_total")
             except Exception:
                 pass
 
@@ -667,13 +684,8 @@ def open_panel(state: dict):
             return options[-1]
 
     def refresh_aplicar() -> None:
+        # Só o preview; o botão NUNCA desabilita (mesmo valor => no-op no clique).
         preview_var.set(f"Cores: {current_option()}")
-        try:
-            aplicar_btn.configure(
-                state="normal" if needs_apply(current_option(), state.get("selected"))
-                else "disabled")
-        except Exception:
-            pass
 
     def on_scale(value: str) -> None:
         # A NodeSlider já trava em nós e só dispara em mudança real de índice;
@@ -837,14 +849,12 @@ def open_panel(state: dict):
             # Sem nenhum chamado Tkinter a partir da worker (racy) o teardown
             # sempre roda: o PID morre e o updater relança o app.
             poll_update_settle(state)
-            # Aplicar acompanha o aplicado (ex.: mudança pela tray); o slider
-            # em si não é movido para não brigar com o arraste do usuário.
+            # O nó aplicado acompanha o aplicado (ex.: mudança pela tray); o
+            # slider em si não é movido para não brigar com o arraste.
+            # O botão nunca desabilita (mesmo valor => no-op no clique).
             try:
                 applied_idx = slider_index_for(options, state.get("selected"))
                 scale.set_applied(applied_idx)
-                aplicar_btn.configure(
-                    state="normal" if needs_apply(current_option(), state.get("selected"))
-                    else "disabled")
             except Exception:
                 pass
         except Exception:
