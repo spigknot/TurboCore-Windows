@@ -18,6 +18,12 @@ CHECK_COL_PX = 24
 ROW_H = 24
 ROW_BG = "#ffffff"
 ROW_HOVER_BG = "#e5f1fb"
+# Contorno do menu como um todo (borda de 1px ao redor do popup) + traço
+# fino separando cada item.
+MENU_BORDER = "#9e9e9e"
+MENU_SEP = "#e0e0e0"
+MENU_SEP_H = 1
+MENU_BORDER_PX = 1
 
 
 def available() -> bool:
@@ -65,7 +71,11 @@ def _build_popup_window(owner, items, coords=None):
     Extraída de show_popup para teste: cada linha é um Frame de altura fixa
     (ROW_H) com 2 colunas — check de largura FIXA à esquerda + texto
     centralizado. O ✓ nunca empurra o texto. Hover sombreia a linha.
+    Contorno: o Toplevel usa MENU_BORDER como fundo e um corpo interno com
+    padx/pady de MENU_BORDER_PX forma a borda de 1px ao redor do menu.
+    Entre cada item há um traço fino (MENU_SEP, altura MENU_SEP_H).
     rows: [(frame, check_label, text_label, item)].
+    Os separadores ficam em win._tc_seps; o corpo interno em win._tc_body.
     """
     import tkinter as tk
     import tkinter.font as tkfont
@@ -77,19 +87,31 @@ def _build_popup_window(owner, items, coords=None):
     except Exception:
         longest = max(len(t) for t in labels) * 8
     width = popup_width(natural_width(longest), longest)
+    total_h = (len(labels) * ROW_H
+               + max(len(labels) - 1, 0) * MENU_SEP_H
+               + MENU_BORDER_PX * 2)
     if coords:
-        x, y = int(coords[0]) - width // 2, int(coords[1]) - len(labels) * ROW_H - 8
+        x, y = int(coords[0]) - width // 2, int(coords[1]) - total_h - 8
     else:
         x, y = 100, 100
     win = tk.Toplevel(owner)
     win.overrideredirect(True)
-    win.configure(background=ROW_BG)
-    win.geometry(f"{width}x{len(labels) * ROW_H}+{max(x, 0)}+{max(y, 0)}")
+    win.configure(background=MENU_BORDER)
+    win.geometry(f"{width + MENU_BORDER_PX * 2}x{total_h}+{max(x, 0)}+{max(y, 0)}")
     win.attributes("-topmost", True)
+    body = tk.Frame(win, background=ROW_BG)
+    body.pack(fill="both", expand=True,
+              padx=MENU_BORDER_PX, pady=MENU_BORDER_PX)
 
     rows = []
-    for item in items:
-        frame = tk.Frame(win, background=ROW_BG, height=ROW_H)
+    seps = []
+    for idx, item in enumerate(items):
+        if idx > 0:
+            sep = tk.Frame(body, background=MENU_SEP, height=MENU_SEP_H)
+            sep.pack(fill="x")
+            sep.pack_propagate(False)
+            seps.append(sep)
+        frame = tk.Frame(body, background=ROW_BG, height=ROW_H)
         frame.pack(fill="x")
         frame.pack_propagate(False)
         frame.grid_propagate(False)  # o grid interno não pode encolher a linha
@@ -131,6 +153,8 @@ def _build_popup_window(owner, items, coords=None):
             widget.bind("<Enter>", hover_on)
             widget.bind("<Leave>", hover_off)
         rows.append((frame, check, text, item))
+    win._tc_body = body
+    win._tc_seps = seps
     return win, rows
 
 

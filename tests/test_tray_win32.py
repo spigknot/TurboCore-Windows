@@ -73,17 +73,58 @@ def test_popup_check_coluna_fixa_texto_nao_desloca(tk_root):
 
 @pytest.mark.skipif(sys.platform != "win32", reason="popup Tk no Windows")
 def test_popup_sem_faixa_cinza(tk_root):
-    """Janela e linhas brancas, altura exata (nada de fundo aparecendo)."""
+    """Corpo e linhas brancos, altura exata (borda + linhas + separadores)."""
     state = _state()
     items = [it for it in w32.popup_items(state) if not it.get("sep")]
     win, rows = w32._build_popup_window(tk_root, items, coords=(500, 500))
     try:
         win.update_idletasks()
-        assert str(win.cget("background")).lower() == "#ffffff"
-        assert win.winfo_reqheight() == len(rows) * w32.ROW_H
+        assert str(win.cget("background")).lower() == w32.MENU_BORDER.lower()
+        assert str(win._tc_body.cget("background")).lower() == "#ffffff"
+        esperado = (len(rows) * w32.ROW_H
+                    + (len(rows) - 1) * w32.MENU_SEP_H
+                    + w32.MENU_BORDER_PX * 2)
+        assert win.winfo_reqheight() == esperado
         for f, c, t, _it in rows:
             for w in (f, c, t):
                 assert str(w.cget("background")).lower() == "#ffffff"
+    finally:
+        win.destroy()
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="popup Tk no Windows")
+def test_popup_contorno_menu(tk_root):
+    """Menu como um todo tem contorno: Toplevel na cor da borda + corpo
+    interno com recuo de MENU_BORDER_PX em todos os lados."""
+    state = _state()
+    items = [it for it in w32.popup_items(state) if not it.get("sep")]
+    win, rows = w32._build_popup_window(tk_root, items, coords=(500, 500))
+    try:
+        win.update_idletasks()
+        assert str(win.cget("background")).lower() == w32.MENU_BORDER.lower()
+        body = win._tc_body
+        assert body.master is win
+        info = body.pack_info()
+        assert int(info["padx"]) == w32.MENU_BORDER_PX
+        assert int(info["pady"]) == w32.MENU_BORDER_PX
+    finally:
+        win.destroy()
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="popup Tk no Windows")
+def test_popup_separador_fino_entre_cada_item(tk_root):
+    """Um traço fino (MENU_SEP, altura MENU_SEP_H) entre cada par de itens."""
+    state = _state()
+    items = [it for it in w32.popup_items(state) if not it.get("sep")]
+    win, rows = w32._build_popup_window(tk_root, items, coords=(500, 500))
+    try:
+        win.update_idletasks()
+        seps = win._tc_seps
+        assert len(seps) == len(rows) - 1
+        for s in seps:
+            assert str(s.cget("background")).lower() == w32.MENU_SEP.lower()
+            assert int(s.cget("height")) == w32.MENU_SEP_H
+            assert s.pack_info()["fill"] == "x"
     finally:
         win.destroy()
 
