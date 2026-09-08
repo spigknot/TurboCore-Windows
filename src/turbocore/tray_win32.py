@@ -7,10 +7,11 @@ Fallback: pystray (ver tray.run_tray).
 """
 from __future__ import annotations
 
-# Largura do popup = 67% da largura natural (33% mais estreito). O piso garante
-# que o texto mais longo nunca clipa (texto + respiro mínimo).
+# Largura do popup = 67% da largura natural (33% mais estreito). O piso é
+# estrutural: texto mais longo + coluna do check + respiro à direita — o
+# texto ("Lembrar escolha") nunca clipa, sem folga exagerada.
 POPUP_RATIO = 0.67
-POPUP_MIN_PAD = 16
+POPUP_TEXT_PAD = 8
 CHECK = "✓"
 # Coluna de check com largura FIXA (px): o texto nunca se desloca, com ou sem ✓.
 CHECK_COL_PX = 24
@@ -48,8 +49,9 @@ def popup_items(state: dict) -> list:
 
 
 def popup_width(natural_px: int, longest_text_px: int) -> int:
-    """Largura final: 67% da natural, com piso no texto + respiro."""
-    return max(int(natural_px * POPUP_RATIO), longest_text_px + POPUP_MIN_PAD)
+    """Largura final: 67% da natural, com piso no texto + check + respiro."""
+    floor = longest_text_px + CHECK_COL_PX + POPUP_TEXT_PAD
+    return max(int(natural_px * POPUP_RATIO), floor)
 
 
 def natural_width(longest_text_px: int) -> int:

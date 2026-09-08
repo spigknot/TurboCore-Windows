@@ -290,17 +290,17 @@ def test_bolt_image_nitido_e_quadrado():
 
 
 def test_aplicar_botao_raio_quadrado(tk_root):
-    """Botão Aplicar: ícone de raio, sem texto, quadrado, ~23px de lado."""
+    """Botão Aplicar: ícone de raio, sem texto, quadrado, ~36px de lado."""
     import tkinter as tk
     from tkinter import ttk
-    ttk.Style(tk_root).configure("Apply.TButton", padding=(2, 2))
+    ttk.Style(tk_root).configure("Apply.TButton", padding=(4, 4))
     parent = tk.Frame(tk_root)
     btn = panel.create_apply_button(parent, "Apply.TButton", lambda: None)
     assert btn.cget("text") == ""
     assert str(btn.cget("image")) != "", "sem imagem de raio"
     w, h = btn.winfo_reqwidth(), btn.winfo_reqheight()
     assert w == h, (w, h)
-    assert 20 <= h <= 28, h  # mesma altura do botão de texto anterior (~23)
+    assert 32 <= h <= 40, h  # +50% sobre os 24px originais
     parent.destroy()
 
 

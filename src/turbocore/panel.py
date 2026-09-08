@@ -27,8 +27,8 @@ REFRESH_MS = 1000
 # centralizado conviver com o botão Atualizar à direita sem sobreposição.
 PANEL_GEOMETRY = "300x720"
 # Raio do botão Aplicar (px): com padding simétrico o botão sai quadrado;
-# 14px + padding (2,2) ~= 24px de lado — mesma altura do botão anterior.
-BOLT_PX = 14
+# 21px + padding (4,4) ~= 36px de lado (+50% sobre os 24px originais).
+BOLT_PX = 21
 
 
 def sobre_texts() -> tuple[str, str, str]:
@@ -677,8 +677,8 @@ def open_panel(state: dict):
         pass
 
     # Botão Aplicar: quadrado com ícone de raio (sem texto). Padding simétrico
-    # => largura == altura por construção; altura ~igual à anterior (~23px).
-    style.configure("Apply.TButton", padding=(2, 2))
+    # => largura == altura por construção (~36px de lado).
+    style.configure("Apply.TButton", padding=(4, 4))
     aplicar_row = tk.Frame(root)
     aplicar_row.pack(fill="x", pady=(2, 4))
     aplicar_btn = create_apply_button(aplicar_row, "Apply.TButton",

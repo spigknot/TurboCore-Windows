@@ -34,11 +34,21 @@ def test_popup_checks_espelham_state():
 
 def test_popup_33_por_cento_mais_estreito():
     assert w32.popup_width(300, 100) == 201
-    assert w32.popup_width(150, 100) == 116  # piso: texto + respiro
+    assert w32.popup_width(150, 100) == 132  # piso: texto + check + respiro
 
 
 def test_popup_piso_nunca_clipa_texto():
-    assert w32.popup_width(100, 200) == 216
+    assert w32.popup_width(100, 200) == 232
+
+
+def test_popup_piso_cabe_lembrar_escolha(tk_root):
+    """Vacina do print: 'Lembrar escolha' clipava ('Lembrar escol...')."""
+    import tkinter.font as tkfont
+    font = tkfont.Font(font=("Segoe UI", 10))
+    longest = font.measure("Lembrar escolha")
+    width = w32.popup_width(w32.natural_width(longest), longest)
+    assert width >= longest + w32.CHECK_COL_PX + w32.POPUP_TEXT_PAD
+    assert width - (longest + w32.CHECK_COL_PX) <= 12, width  # sem exagero
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="popup Tk no Windows")
