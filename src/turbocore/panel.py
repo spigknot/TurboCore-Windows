@@ -531,7 +531,7 @@ def open_panel(state: dict):
         log = state.get("log")
         if log is not None:
             try:
-                log.append(f"Núcleos limitados a {n}.")
+                log.append(f"Núcleos limitados a {n}.", "vad_total")
             except Exception:
                 pass
 
@@ -623,7 +623,7 @@ def open_panel(state: dict):
     activity = ActivityLog(root, log_text)
     state["log"] = activity
     # Eventos de UI (check/update) também precisam logar em qualquer thread.
-    activity.append("Painel aberto.")
+    activity.append("Painel aberto.", "vad_total")
     if state.get("post_update"):
         activity.append(f"Atualizado para {__version__}.", "vad_total")
 

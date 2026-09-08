@@ -104,12 +104,18 @@ def test_activity_log_caixa_e_passos(tk_root):
     import tkinter as tk
     box = tk.Text(tk_root)
     activity = panel.ActivityLog(tk_root, box)
-    activity.append("Painel aberto.")
+    activity.append("Painel aberto.", "vad_total")
+    activity.append("Núcleos limitados a 8.", "vad_total")
     activity.begin("update:check", "Buscando updates")
     activity.finish("update:check", 1.5, suffix="- Não tem!")
     activity._drain()  # o drain roda na UI thread; teste chama direto
     content = box.get("1.0", "end")
     assert "Painel aberto." in content
+    # Mensagens de sucesso simples também saem em verde (vad_total).
+    for needle in ("Painel aberto.", "Núcleos limitados a 8."):
+        linha_ok = next(i for i in range(1, int(box.index("end-1c").split(".")[0]) + 1)
+                        if needle in box.get(f"{i}.0", f"{i}.end"))
+        assert "vad_total" in box.tag_names(f"{linha_ok}.1"), (needle, box.tag_names(f"{linha_ok}.1"))
     # A etapa não deve gerar uma segunda linha: reescrita na mesma linha.
     assert content.count("Buscando updates") == 1
     assert "- Não tem! (1.5s)" in content
