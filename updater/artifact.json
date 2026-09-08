@@ -1,9 +1,9 @@
 ﻿{
     "schema":  1,
     "name":  "TurboCoreUpdater.exe",
-    "size":  11097995,
-    "sha256":  "ee37164d3521966b0042575cdfc56e5272190db5e53964b01215273e0b0fc5d0",
+    "size":  11098397,
+    "sha256":  "085416403c977b0dff56bb72d1c15205e3ad2db91f62290ebbc8be558fc170a0",
     "source":  "updater/turbocore_updater.py",
-    "source_sha256":  "4fda901704d6959fd41edefec79ba58c0441c11ff8b8a19e89fdb4518173ffce",
+    "source_sha256":  "d875eabe640a23acccaedc9f609f618b74c156d477590b71605de4b756e7b772",
     "builder":  "PyInstaller 6.21.0, Python 3.11.0, --onefile --windowed --clean --noupx, SOURCE_DATE_EPOCH=946684800, PYTHONHASHSEED=0"
 }

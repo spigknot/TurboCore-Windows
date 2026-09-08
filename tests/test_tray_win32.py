@@ -42,6 +42,67 @@ def test_popup_piso_nunca_clipa_texto():
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="popup Tk no Windows")
+def test_popup_check_coluna_fixa_texto_nao_desloca(tk_root):
+    """O ✓ mora em coluna de largura fixa: o texto fica no mesmo x/largura."""
+    state = _state()
+    items = [it for it in w32.popup_items(state) if not it.get("sep")]
+    assert any(it["checked"] for it in items) and any(not it["checked"] for it in items)
+    win, rows = w32._build_popup_window(tk_root, items, coords=(500, 500))
+    try:
+        win.deiconify()
+        win.update()
+        posicoes = {(t.winfo_x(), t.winfo_width()) for _, _, t, _ in rows}
+        assert len(posicoes) == 1, posicoes
+        for _f, _c, t, _it in rows:
+            assert t.cget("anchor") == "center"
+        for f, _c, _t, _it in rows:
+            assert f.winfo_reqheight() == w32.ROW_H
+    finally:
+        win.destroy()
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="popup Tk no Windows")
+def test_popup_sem_faixa_cinza(tk_root):
+    """Janela e linhas brancas, altura exata (nada de fundo aparecendo)."""
+    state = _state()
+    items = [it for it in w32.popup_items(state) if not it.get("sep")]
+    win, rows = w32._build_popup_window(tk_root, items, coords=(500, 500))
+    try:
+        win.update_idletasks()
+        assert str(win.cget("background")).lower() == "#ffffff"
+        assert win.winfo_reqheight() == len(rows) * w32.ROW_H
+        for f, c, t, _it in rows:
+            for w in (f, c, t):
+                assert str(w.cget("background")).lower() == "#ffffff"
+    finally:
+        win.destroy()
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="popup Tk no Windows")
+def test_popup_hover_sombreia_linha(tk_root):
+    """Enter sombreia a linha inteira; Leave (fora dela) restaura o branco."""
+    state = _state()
+    items = [it for it in w32.popup_items(state) if not it.get("sep")]
+    win, rows = w32._build_popup_window(tk_root, items, coords=(500, 500))
+    try:
+        win.deiconify()
+        win.update()
+        f, c, t, _it = rows[0]
+        assert f.bind("<Enter>") != "" and f.bind("<Leave>") != ""
+        f.event_generate("<Enter>")
+        tk_root.update()
+        assert str(t.cget("background")).lower() == w32.ROW_HOVER_BG.lower()
+        assert str(c.cget("background")).lower() == w32.ROW_HOVER_BG.lower()
+        assert str(f.cget("background")).lower() == w32.ROW_HOVER_BG.lower()
+        f.event_generate("<Leave>")
+        tk_root.update()
+        assert str(t.cget("background")).lower() == "#ffffff"
+        assert str(f.cget("background")).lower() == "#ffffff"
+    finally:
+        win.destroy()
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="popup Tk no Windows")
 def test_show_popup_centralizado_e_estreito(tk_root):
     import tkinter as tk
     import tkinter.font as tkfont
@@ -62,7 +123,12 @@ def test_show_popup_centralizado_e_estreito(tk_root):
             # roda na UI thread: mede e fecha
             win = opened[0]
             win.update_idletasks()
-            labels = [c for c in win.winfo_children() if c.winfo_class() == "Label"]
+            def all_labels(w):
+                for c in w.winfo_children():
+                    if c.winfo_class() == "Label":
+                        yield c
+                    yield from all_labels(c)
+            labels = list(all_labels(win))
             medida["anchors"] = {l.cget("anchor") for l in labels}
             medida["texts"] = [l.cget("text") for l in labels]
             medida["width"] = win.winfo_width()

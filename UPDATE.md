@@ -177,3 +177,5 @@ Se QUALQUER passo divergir, atualize este arquivo no mesmo commit da versão.
 | Release parcial/draft no GitHub | assets junto do `create` + timeout | metadados primeiro, uploads separados |
 | `401/503` transitórios (R2/GitHub) | rede/API | repetir e conferir depois; nunca confiar em data, conferir SHA/nomes |
 | Diff gigante lento (~1 arq/s) | download serial de centenas de arquivos miúdos (tcl/tk) | normal em major; futuro: downloads paralelos no updater (o SIG usa ThreadPool x4) |
+| Update pelo painel esvaziou a instalação (1045 removidos p/ 3 aplicados) | `removals` do painel = manifesto inteiro, não órfãos | órfãos = `disco − manifesto` (+protegidos); guarda no `worker_apply_staged` ignora removals sobrepostas ao staged/updater/lock |
+| App não encerrou após update pelo painel (updater expirou PID, sem relançar) | teardown Tk chamado da thread de download (`after`/`event_generate` levantam `main thread is not in main loop` de forma racy) | worker só deposita `state["update_settle"]`; `tick()` (UI) executa via `poll_update_settle()`; watchdog 8s cobre painel fechado |

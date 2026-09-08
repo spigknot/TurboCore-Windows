@@ -143,6 +143,167 @@ def test_activity_log_arquivo_progresso(tk_root):
     box.destroy()
 
 
+def test_sync_removals_so_orfaos(tmp_path):
+    """Vacina do 004->006: removals.txt levava o manifesto inteiro (1045).
+
+    Órfãos = arquivos no disco AUSENTES do manifesto novo; o updater em
+    execução, seu lock e seu log nunca entram na lista.
+    """
+    import tempfile
+    from pathlib import Path
+    target = tmp_path / "app"
+    (target / "_internal").mkdir(parents=True)
+    (target / "TurboCore.exe").write_bytes(b"exe")
+    (target / "_internal" / "base_library.zip").write_bytes(b"lib")
+    (target / "velho.dll").write_bytes(b"orphan")
+    (target / "TurboCoreUpdater.exe").write_bytes(b"updater")
+    (target / ".turbocore-update.lock").write_bytes(b"lock")
+    (target / "TurboCoreUpdater.log").write_bytes(b"log")
+    files = {"TurboCore.exe": {}, "_internal/base_library.zip": {}}
+    got = {}
+    panel.sync_download_worker({}, target, files, [], panel._NullLog(),
+                               lambda k, p: got.setdefault("done", (k, p)),
+                               version="20260907_009")
+    assert got["done"][0] == "ready", got
+    removals = Path(tempfile.gettempdir(), "turbocore_updater_sync",
+                    "removals.txt").read_text(encoding="utf-8").split()
+    assert removals == ["velho.dll"], removals
+
+
+def test_update_teardown_somente_via_recolhimento_ui(tmp_path, monkeypatch):
+    """Vacina do PID que nunca morria: destroy/stop vinham da thread de download.
+
+    A worker só deposita state["update_settle"]; quem executa é o
+    poll_update_settle() — chamado pelo tick() na UI thread. Nenhum chamado
+    Tkinter parte da worker (after/event_generate levantam "main thread is
+    not in main loop" de forma racy). O watchdog cobre o painel fechado.
+    """
+    import hashlib
+    import threading
+    import time
+    from pathlib import Path
+    from turbocore import updater_client
+    target = tmp_path / "app"
+    target.mkdir()
+    payload = b"novo-exe"
+    digest = hashlib.sha256(payload).hexdigest()
+    monkeypatch.setattr(updater_client, "install_dir", lambda: target)
+    monkeypatch.setattr(updater_client, "fetch_sync_manifest",
+                        lambda: {"version": "20260907_009",
+                                 "files": [{"path": "TurboCore.exe", "sha256": digest,
+                                            "github_url": "https://x/novo"}]})
+    monkeypatch.setattr(updater_client, "download_url",
+                        lambda url, dest, progress_callback=None, urlopen=None:
+                        (Path(dest).write_bytes(payload),
+                         progress_callback(len(payload), len(payload))
+                         if progress_callback else None))
+    launched = []
+    monkeypatch.setattr(updater_client, "launch_updater_sync",
+                        lambda staged, rem, ver, tgt: launched.append(ver) or True)
+    main_ident = threading.get_ident()
+    calls: dict = {}
+    state = {"pending_update": "20260907_009", "log": panel._NullLog()}
+    assert panel.handle_update_click(
+        state, lambda: calls.setdefault("destroy", threading.get_ident()),
+        lambda: calls.setdefault("stop", threading.get_ident()),
+        lambda m: calls.setdefault("err", m)) is True
+    # A worker termina (outcome depositado) SEM executar o teardown...
+    deadline = time.monotonic() + 15
+    while "update_settle" not in state and time.monotonic() < deadline:
+        time.sleep(0.02)
+    assert "update_settle" in state, (launched, calls)
+    assert launched == [] and "destroy" not in calls and "stop" not in calls, calls
+    # ...quem executa é o recolhimento (tick, na UI thread):
+    assert panel.poll_update_settle(state) is True
+    assert launched == ["20260907_009"], (launched, calls)
+    assert calls.get("destroy") == main_ident, calls
+    assert calls.get("stop") == main_ident, calls
+    assert "err" not in calls, calls.get("err")
+    assert panel.poll_update_settle(state) is False  # idempotente
+
+
+def test_update_watchdog_fecha_app_com_painel_fechado(tmp_path, monkeypatch):
+    """Sem tick (painel fechado no meio do download), o watchdog desliga.
+
+    O destroy falha (root morta) e é ignorado, mas o stop TEM que rodar para
+    o updater sair da espera do PID e relançar o app.
+    """
+    import hashlib
+    import threading
+    import time
+    from pathlib import Path
+    from turbocore import updater_client
+    target = tmp_path / "app"
+    target.mkdir()
+    payload = b"novo-exe"
+    digest = hashlib.sha256(payload).hexdigest()
+    monkeypatch.setattr(updater_client, "install_dir", lambda: target)
+    monkeypatch.setattr(updater_client, "fetch_sync_manifest",
+                        lambda: {"version": "20260907_009",
+                                 "files": [{"path": "TurboCore.exe", "sha256": digest,
+                                            "github_url": "https://x/novo"}]})
+    monkeypatch.setattr(updater_client, "download_url",
+                        lambda url, dest, progress_callback=None, urlopen=None:
+                        Path(dest).write_bytes(payload))
+    monkeypatch.setattr(updater_client, "launch_updater_sync",
+                        lambda staged, rem, ver, tgt: True)
+
+    fired = {}
+
+    class FakeTimer:
+        def __init__(self, delay, fn):
+            self.fn = fn
+            fired["delay"] = delay
+        daemon = True
+        def start(self):
+            self.fn()  # watchdog imediato: simula tick morto
+
+    monkeypatch.setattr("threading.Timer", FakeTimer)
+    calls: dict = {}
+    state = {"pending_update": "20260907_009", "log": panel._NullLog()}
+
+    def destroy():
+        calls["destroy tried"] = True
+        raise RuntimeError("root morta")
+
+    assert panel.handle_update_click(
+        state, destroy,
+        lambda: calls.setdefault("stop", True),
+        lambda m: calls.setdefault("err", m)) is True
+    deadline = time.monotonic() + 15
+    while "stop" not in calls and "err" not in calls \
+            and time.monotonic() < deadline:
+        time.sleep(0.02)
+    assert calls.get("stop") is True, calls  # stop rodou mesmo sem painel
+    assert fired.get("delay") == 8.0, fired
+
+
+def test_bolt_image_nitido_e_quadrado():
+    """Raio RGBA com fundo transparente e corpo centralizado (supersample)."""
+    from turbocore.icons import bolt_image
+    img = bolt_image(16)
+    assert img.size == (16, 16) and img.mode == "RGBA"
+    opaque = sum(img.getchannel("A").histogram()[128:])  # nº de px >=50% alfa
+    assert 256 * 0.05 < opaque < 256 * 0.6, opaque
+    left, top, right, bottom = img.getchannel("A").getbbox()
+    assert right - left >= 4 and bottom - top >= 8
+
+
+def test_aplicar_botao_raio_quadrado(tk_root):
+    """Botão Aplicar: ícone de raio, sem texto, quadrado, ~23px de lado."""
+    import tkinter as tk
+    from tkinter import ttk
+    ttk.Style(tk_root).configure("Apply.TButton", padding=(2, 2))
+    parent = tk.Frame(tk_root)
+    btn = panel.create_apply_button(parent, "Apply.TButton", lambda: None)
+    assert btn.cget("text") == ""
+    assert str(btn.cget("image")) != "", "sem imagem de raio"
+    w, h = btn.winfo_reqwidth(), btn.winfo_reqheight()
+    assert w == h, (w, h)
+    assert 20 <= h <= 28, h  # mesma altura do botão de texto anterior (~23)
+    parent.destroy()
+
+
 def test_manual_check_trava_concorrencia():
     import threading
     checker = panel.ManualCheck()
@@ -221,11 +382,13 @@ def test_update_click_sem_updater_mantem_app():
         raise Exception("dns")
     with patch.object(panel.updater_client, "fetch_sync_manifest", side_effect=boom_fetch), \
             patch.object(panel.updater_client, "launch_updater_sync", return_value=False):
+        state = {"pending_update": "20260907_002", "log": None}
         ok = panel.handle_update_click(
-            {"pending_update": "20260907_002", "log": None},
+            state,
             destroyed.append, lambda: stopped.append(1), errors.append)
     deadline = __import__("time").monotonic() + 5
     while not errors and __import__("time").monotonic() < deadline:
+        panel.poll_update_settle(state)  # o tick faz isso na UI thread
         __import__("time").sleep(0.05)
     assert ok is True  # o clique inicia o fluxo em thread; app continua até o fim
     assert errors and "dns" in errors[0]
@@ -270,12 +433,14 @@ def test_update_click_baixa_e_dispara_sync(tmp_path, monkeypatch):
             patch.object(panel.updater_client, "launch_updater_sync", side_effect=fake_launch), \
             patch.object(panel.updater_client, "download_url", side_effect=fake_download_url), \
             patch.object(panel.updater_client, "install_dir", return_value=tmp_path):
+        state = {"pending_update": "20260907_002", "log": None}
         ok = panel.handle_update_click(
-            {"pending_update": "20260907_002", "log": None},
+            state,
             lambda: destroyed.append(1), lambda: stopped.append(1), errors.append,
             set_busy=lambda b: busy.append(b))
         deadline = __import__("time").monotonic() + 8
         while not destroyed and __import__("time").monotonic() < deadline:
+            panel.poll_update_settle(state)  # o tick faz isso na UI thread
             __import__("time").sleep(0.05)
     assert ok is True
     assert called.get("version") == "20260907_002"

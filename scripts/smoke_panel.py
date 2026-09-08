@@ -51,11 +51,15 @@ assert not any(isinstance(w, tk.Menu) and w is not root.nametowidget(root.cget("
 scales = [w for w in flat if isinstance(w, NodeSlider)]
 assert len(scales) == 1, "slider de nós único"
 assert not any(isinstance(w, ttk.Scale) for w in flat), "ttk.Scale antigo removido"
-assert any(isinstance(w, ttk.Button) and w.cget("text") == "Aplicar" for w in flat)
+assert any(isinstance(w, ttk.Button) and str(w.cget("image")) != "" for w in flat), \
+    "botão Aplicar (raio) ausente"
+assert not any(isinstance(w, ttk.Button) and w.cget("text") == "Aplicar" for w in flat), \
+    "botão Aplicar ainda com texto"
 # preview inicial = aplicado (10) e Aplicar desabilitado (nada a aplicar)
 assert any("Cores: 10" in t for t in texts), texts
-aplicar = next(w for w in flat if isinstance(w, ttk.Button) and w.cget("text") == "Aplicar")
+aplicar = next(w for w in flat if isinstance(w, ttk.Button) and str(w.cget("image")) != "")
 assert str(aplicar.cget("state")) == "disabled", aplicar.cget("state")
+assert aplicar.winfo_reqwidth() == aplicar.winfo_reqheight(), "botão raio quadrado"
 # geometria estreita (justa para a linha do slider)
 assert root.geometry().startswith("300x720"), root.geometry()
 # Caixa de log presente e registrada no state (fluxo do update).

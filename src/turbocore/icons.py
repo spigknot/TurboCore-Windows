@@ -65,3 +65,26 @@ def load_icon() -> Image.Image:
             continue
     # ultimo recurso p/ nunca quebrar o boot (era o quadrado verde do print)
     return Image.new("RGB", (TRAY_SIZE, TRAY_SIZE), _FALLBACK_COLOR)
+
+
+# Raio do botão Aplicar: desenhado grande (supersample) e reduzido com
+# LANCZOS para bordas suaves mesmo em 14-16px. Amarelo âmbar + contorno
+# escuro: legível sobre o cinza-claro do tema clam.
+BOLT_FILL = (255, 195, 0, 255)
+BOLT_OUTLINE = (122, 82, 0, 255)
+_BOLT_POINTS = ((0.60, 0.05), (0.30, 0.55), (0.47, 0.55),
+                (0.40, 0.95), (0.72, 0.45), (0.54, 0.45))
+
+
+def bolt_image(size_px: int = 16, supersample: int = 4) -> Image.Image:
+    """Raio RGBA size_px x size_px, nítido via supersampling."""
+    from PIL import ImageDraw
+    big = max(int(size_px) * max(int(supersample), 1), 8)
+    img = Image.new("RGBA", (big, big), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(img)
+    pts = [(x * big, y * big) for x, y in _BOLT_POINTS]
+    draw.polygon(pts, fill=BOLT_FILL)
+    draw.polygon(pts, outline=BOLT_OUTLINE, width=max(big // 32, 2))
+    if (big, big) != (size_px, size_px):
+        img = img.resize((size_px, size_px), Image.LANCZOS)
+    return img

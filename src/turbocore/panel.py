@@ -26,6 +26,9 @@ REFRESH_MS = 1000
 # Largura justa: linha do slider (240px) + margens, e espaço para o label
 # centralizado conviver com o botão Atualizar à direita sem sobreposição.
 PANEL_GEOMETRY = "300x720"
+# Raio do botão Aplicar (px): com padding simétrico o botão sai quadrado;
+# 14px + padding (2,2) ~= 24px de lado — mesma altura do botão anterior.
+BOLT_PX = 14
 
 
 def sobre_texts() -> tuple[str, str, str]:
@@ -40,6 +43,30 @@ def sobre_artwork() -> Path | None:
         if cand.is_file():
             return cand
     return None
+
+
+def create_apply_button(master, style_name: str, command):
+    """Botão Aplicar quadrado com ícone de raio (sem texto).
+
+    Extraído de open_panel para teste (a suíte só permite um Tk() por
+    processo). Fallback para texto se o PIL falhar. Padding simétrico do
+    estilo => largura == altura por construção.
+    """
+    from tkinter import ttk
+    try:
+        from PIL import ImageTk
+        from turbocore.icons import bolt_image
+        photo = ImageTk.PhotoImage(bolt_image(BOLT_PX), master=master)
+    except Exception:
+        photo = None
+    if photo is not None:
+        btn = ttk.Button(master, image=photo, text="", style=style_name,
+                         command=command)
+        btn.image = photo  # mantém referência (sem GC)
+    else:
+        btn = ttk.Button(master, text="Aplicar", style=style_name,
+                         command=command)
+    return btn
 
 
 def cores_label(selected: int | None, physical: int) -> str:
@@ -155,10 +182,20 @@ def sync_download_worker(state: dict, target: Path, files: dict[str, dict],
             if computed != str(entry["sha256"]).lower():
                 raise RuntimeError(f"SHA-256 divergente ao baixar: {path}")
             log.file_progress(path, "100%", done_tag="vad_total")
-        for path in sorted(files):
-            local = target / Path(*path.split("/"))
-            if local.is_file():
-                removals.append(path)
+        # Órfãos = arquivos no disco que NÃO estão no manifesto novo (espelha
+        # worker_full: _target_tree - staged). NUNCA o manifesto inteiro:
+        # ele lista o que deve EXISTIR, não o que deve sair. Protegidos:
+        # o updater em execução, seu lock e seu log (não estão no staged).
+        protected = {updater_client.UPDATER_EXE_NAME, ".turbocore-update.lock",
+                     "TurboCoreUpdater.log"}
+        manifest_names = set(files)
+        removals = []
+        for local in sorted(Path(target).rglob("*")):
+            if not local.is_file():
+                continue
+            rel = local.relative_to(Path(target)).as_posix()
+            if rel not in manifest_names and rel not in protected:
+                removals.append(rel)
         removals_path = staging_root / "removals.txt"
         removals_path.write_text("\n".join(removals) + ("\n" if removals else ""),
                                  encoding="utf-8")
@@ -170,6 +207,24 @@ def sync_download_worker(state: dict, target: Path, files: dict[str, dict],
         except Exception:
             pass
         on_done("error", str(exc))
+
+
+def poll_update_settle(state: dict) -> bool:
+    """Recolhe state["update_settle"] e executa. O tick() chama na UI thread.
+
+    Retorna True se havia um desfecho pendente (executado ou não).
+    """
+    try:
+        settle_fn = state.pop("update_settle", None)
+    except Exception:
+        return False
+    if settle_fn is None:
+        return False
+    try:
+        settle_fn()
+    except Exception:
+        pass
+    return True
 
 
 def handle_update_click(state, destroy_fn, stop_fn, error_fn,
@@ -188,11 +243,34 @@ def handle_update_click(state, destroy_fn, stop_fn, error_fn,
     if set_busy is not None:
         set_busy(True)
 
-    def done(kind, payload):
+    # O desfecho (Popen do updater + teardown + diálogos) PRECISA rodar na UI
+    # thread — mas NENHUM chamado Tkinter é confiável a partir da thread de
+    # download (after e event_generate levantam "main thread is not in main
+    # loop" de forma racy: foi assim que o app ficou vivo e o updater expirou
+    # os 120s sem relançar). Mecanismo determinístico: a worker deposita o
+    # outcome em state["update_settle"] e o tick() (UI thread, 1s) recolhe e
+    # executa. Um watchdog cobre o caso do painel fechado no meio do
+    # download (tick morto): aí o teardown roda direto — o destroy falha e é
+    # ignorado, mas o stop TEM que rodar para o updater prosseguir.
+    outcome: dict = {}
+
+    def teardown() -> None:
+        try:
+            destroy_fn()
+        except Exception:
+            pass
+        try:
+            stop_fn()
+        except Exception:
+            pass
+
+    def settle() -> None:
+        result = outcome.pop("result", None)
+        if result is None:
+            return  # recolhido 2x (tick + watchdog): nada a fazer
+        kind, payload = result
         try:
             if kind == "ready":
-                if log is not None:
-                    log.append("Download concluído: aplicando atualização...", "vad_total")
                 launched = updater_client.launch_updater_sync(
                     payload["staged"], payload["removals"], payload["version"], target)
                 if not launched:
@@ -200,19 +278,43 @@ def handle_update_click(state, destroy_fn, stop_fn, error_fn,
                     if set_busy is not None:
                         set_busy(False)
                     return
-                destroy_fn()
-                try:
-                    stop_fn()
-                except Exception:
-                    pass
+                # O updater espera o PID morrer: o teardown TEM que rodar para
+                # o processo encerrar e o relançamento ocorrer.
+                teardown()
             else:
                 error_fn(f"Não foi possível atualizar: {payload}")
                 if set_busy is not None:
                     set_busy(False)
         except Exception as exc:
-            error_fn(f"Não foi possível iniciar o atualizador: {exc}")
-            if set_busy is not None:
-                set_busy(False)
+            try:
+                error_fn(f"Não foi possível iniciar o atualizador: {exc}")
+            except Exception:
+                pass
+            try:
+                if set_busy is not None:
+                    set_busy(False)
+            except Exception:
+                pass
+
+    def watchdog() -> None:
+        if state.pop("update_settle", None) is None:
+            return  # a UI (tick) já recolheu
+        try:
+            settle()
+        except Exception:
+            pass
+
+    def done(kind, payload):
+        if kind == "ready" and log is not None:
+            try:
+                log.append("Download concluído: aplicando atualização...", "vad_total")
+            except Exception:
+                pass
+        outcome["result"] = (kind, payload)
+        state["update_settle"] = settle
+        timer = threading.Timer(8.0, watchdog)
+        timer.daemon = True
+        timer.start()
 
     def work():
         try:
@@ -574,12 +676,13 @@ def open_panel(state: dict):
     except Exception:
         pass
 
-    # Botão do tamanho exato do texto (padding mínimo, tema clam).
-    style.configure("Apply.TButton", padding=(8, 1))
+    # Botão Aplicar: quadrado com ícone de raio (sem texto). Padding simétrico
+    # => largura == altura por construção; altura ~igual à anterior (~23px).
+    style.configure("Apply.TButton", padding=(2, 2))
     aplicar_row = tk.Frame(root)
     aplicar_row.pack(fill="x", pady=(2, 4))
-    aplicar_btn = ttk.Button(aplicar_row, text="Aplicar", style="Apply.TButton",
-                             command=lambda: apply_choice(current_option()))
+    aplicar_btn = create_apply_button(aplicar_row, "Apply.TButton",
+                                      lambda: apply_choice(current_option()))
     aplicar_btn.pack(anchor="center")
     refresh_aplicar()
 
@@ -713,6 +816,11 @@ def open_panel(state: dict):
             pending = state.get("pending_update")
             if pending and not update_button.winfo_ismapped():
                 show_update(pending)
+            # Desfecho do update via botão verde: a thread de download deposita
+            # state["update_settle"] e o tick (UI thread) executa em até 1s.
+            # Sem nenhum chamado Tkinter a partir da worker (racy) o teardown
+            # sempre roda: o PID morre e o updater relança o app.
+            poll_update_settle(state)
             # Aplicar acompanha o aplicado (ex.: mudança pela tray); o slider
             # em si não é movido para não brigar com o arraste do usuário.
             try:

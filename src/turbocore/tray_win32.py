@@ -11,7 +11,12 @@ from __future__ import annotations
 # que o texto mais longo nunca clipa (texto + respiro mínimo).
 POPUP_RATIO = 0.67
 POPUP_MIN_PAD = 16
-CHECK = "✓ "
+CHECK = "✓"
+# Coluna de check com largura FIXA (px): o texto nunca se desloca, com ou sem ✓.
+CHECK_COL_PX = 24
+ROW_H = 24
+ROW_BG = "#ffffff"
+ROW_HOVER_BG = "#e5f1fb"
 
 
 def available() -> bool:
@@ -52,13 +57,87 @@ def natural_width(longest_text_px: int) -> int:
     return longest_text_px + 56
 
 
+def _build_popup_window(owner, items, coords=None):
+    """Monta o Toplevel do popup; retorna (win, rows).
+
+    Extraída de show_popup para teste: cada linha é um Frame de altura fixa
+    (ROW_H) com 2 colunas — check de largura FIXA à esquerda + texto
+    centralizado. O ✓ nunca empurra o texto. Hover sombreia a linha.
+    rows: [(frame, check_label, text_label, item)].
+    """
+    import tkinter as tk
+    import tkinter.font as tkfont
+
+    font = ("Segoe UI", 10)
+    labels = [it["label"] for it in items]
+    try:
+        longest = max(tkfont.Font(font=font).measure(t) for t in labels)
+    except Exception:
+        longest = max(len(t) for t in labels) * 8
+    width = popup_width(natural_width(longest), longest)
+    if coords:
+        x, y = int(coords[0]) - width // 2, int(coords[1]) - len(labels) * ROW_H - 8
+    else:
+        x, y = 100, 100
+    win = tk.Toplevel(owner)
+    win.overrideredirect(True)
+    win.configure(background=ROW_BG)
+    win.geometry(f"{width}x{len(labels) * ROW_H}+{max(x, 0)}+{max(y, 0)}")
+    win.attributes("-topmost", True)
+
+    rows = []
+    for item in items:
+        frame = tk.Frame(win, background=ROW_BG, height=ROW_H)
+        frame.pack(fill="x")
+        frame.pack_propagate(False)
+        frame.grid_propagate(False)  # o grid interno não pode encolher a linha
+        frame.grid_columnconfigure(0, minsize=CHECK_COL_PX)
+        frame.grid_columnconfigure(1, weight=1)
+        check = tk.Label(frame, text=CHECK if item["checked"] else "",
+                         anchor="center", font=font, background=ROW_BG)
+        check.grid(row=0, column=0, sticky="ns")
+        text = tk.Label(frame, text=item["label"], anchor="center", font=font,
+                        background=ROW_BG)
+        text.grid(row=0, column=1, sticky="nsew")
+
+        def hover_on(_event, f=frame, c=check, t=text):
+            for w in (f, c, t):
+                try:
+                    w.configure(background=ROW_HOVER_BG)
+                except Exception:
+                    pass
+
+        def hover_off(event, f=frame, c=check, t=text):
+            # Enter/Leave disparam ao transitar entre as 2 colunas da mesma
+            # linha: só apaga quando o ponteiro saiu da linha de verdade.
+            try:
+                under = event.widget.winfo_containing(event.x_root, event.y_root)
+                node = under
+                while node is not None and node is not f:
+                    node = node.master
+                if node is f:
+                    return
+            except Exception:
+                pass
+            for w in (f, c, t):
+                try:
+                    w.configure(background=ROW_BG)
+                except Exception:
+                    pass
+
+        for widget in (frame, check, text):
+            widget.bind("<Enter>", hover_on)
+            widget.bind("<Leave>", hover_off)
+        rows.append((frame, check, text, item))
+    return win, rows
+
+
 def show_popup(state: dict, coords=None) -> None:
     """Abre o popup na thread da UI (chamado via run_event_loop)."""
     import tkinter as tk
     from turbocore import tray as tray_mod
 
     items = [it for it in popup_items(state) if not it.get("sep")]
-    labels = [((CHECK if it["checked"] else "") + it["label"]) for it in items]
 
     panel_root = state.get("panel")
     owner = None
@@ -73,23 +152,7 @@ def show_popup(state: dict, coords=None) -> None:
         owner.withdraw()
         own_root = True
     try:
-        import tkinter.font as tkfont
-        font = ("Segoe UI", 10)
-        try:
-            longest = max(tkfont.Font(font=font).measure(t) for t in labels)
-        except Exception:
-            longest = max(len(t) for t in labels) * 8
-        width = popup_width(natural_width(longest), longest)
-        row_h = 24
-        if coords:
-            x, y = int(coords[0]) - width // 2, int(coords[1]) - len(labels) * row_h - 8
-        else:
-            x, y = 100, 100
-        win = tk.Toplevel(owner)
-        win.overrideredirect(True)
-        win.configure(background="#999999")
-        win.geometry(f"{width}x{len(labels) * row_h + 2}+{max(x, 0)}+{max(y, 0)}")
-        win.attributes("-topmost", True)
+        win, rows = _build_popup_window(owner, items, coords)
 
         def close():
             try:
@@ -111,11 +174,9 @@ def show_popup(state: dict, coords=None) -> None:
             elif isinstance(key, tuple) and key[0] == "core":
                 tray_mod.on_pick_core(state, key[1])
 
-        for item, text in zip(items, labels):
-            lab = tk.Label(win, text=text, anchor="center", font=font,
-                           background="#ffffff")
-            lab.pack(fill="x")
-            lab.bind("<Button-1>", lambda _e, item=item: choose(item))
+        for frame, _check, _text, item in rows:
+            for widget in (frame, frame.winfo_children()[0], frame.winfo_children()[1]):
+                widget.bind("<Button-1>", lambda _e, item=item: choose(item), add="+")
         win.bind("<FocusOut>", lambda _e: close())
         win.bind("<Escape>", lambda _e: close())
         try:

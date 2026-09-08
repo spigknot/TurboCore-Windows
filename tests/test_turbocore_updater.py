@@ -250,6 +250,36 @@ def test_worker_apply_staged_aplica_e_valida(tmp_path, monkeypatch):
     assert "validada" in log.read_text(encoding="utf-8")
 
 
+def test_worker_apply_staged_ignora_removal_sobreposta(tmp_path, monkeypatch):
+    """Vacina do 004->006: removals com o staged apagava a instalação.
+
+    Um chamador com a lista invertida (1045 removals p/ 3 staged) esvaziava
+    o Program Files; o worker agora ignora removals sobrepostas ao staged,
+    o updater em execução e o lock — com trilha no log.
+    """
+    import sys
+    monkeypatch.setattr(sys, "frozen", False, raising=False)
+    target = _fake_target(tmp_path / "app")
+    staged = tmp_path / "staged"
+    (staged / "_internal").mkdir(parents=True)
+    (staged / "TurboCore.exe").write_bytes(b"app-v3")
+    (staged / "build-info.json").write_text(json.dumps({"version": "20260907_003"}))
+    removals = tmp_path / "removals.txt"
+    removals.write_text("TurboCore.exe\nbuild-info.json\nassets/chip.ico\n"
+                        "TurboCoreUpdater.exe\n.turbocore-update.lock\n")
+    launched = []
+    monkeypatch.setattr(tu, "_launch_and_verify", lambda exe, t, log, **k: launched.append(exe))
+    log = tmp_path / "t.log"
+    tu.worker_apply_staged(staged, removals, "20260907_003", target, 0, log,
+                           wait_timeout=1, startup_timeout=1)
+    assert (target / "TurboCore.exe").read_bytes() == b"app-v3"
+    assert tu.installed_version(target) == "20260907_003"
+    assert not (target / "assets" / "chip.ico").exists()  # órfão legítimo sai
+    assert "removals ignoradas" in log.read_text(encoding="utf-8")
+    assert launched == [target / "TurboCore.exe"]
+    assert "validada" in log.read_text(encoding="utf-8")
+
+
 def test_worker_diff_nao_auto_substitui_updater(tmp_path, monkeypatch):
     """O updater em execução NUNCA é substituído pelo diff (self-exclusão)."""
     import sys

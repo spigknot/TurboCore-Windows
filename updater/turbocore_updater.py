@@ -682,6 +682,21 @@ def worker_apply_staged(staged: Path, removals_file: Path, version: str,
             if line:
                 removals.add(line)
     removals.discard(UPDATER_LOG_NAME)
+    # Defesa em profundidade: o staged é o que deve EXISTIR após o update —
+    # nada dele pode constar como remoção (um chamador com a lista invertida
+    # esvaziaria a instalação). Idem o updater em execução e seu lock.
+    try:
+        staged_names = {p.relative_to(staged).as_posix()
+                        for p in Path(staged).rglob("*") if p.is_file()}
+    except OSError:
+        staged_names = set()
+    dropped = ((removals & staged_names)
+               | ({UPDATER_EXE_NAME, UPDATE_LOCK_NAME} & removals))
+    if dropped:
+        _log(log_path, f"removals ignoradas (protegidas/sobrepostas): {len(dropped)}")
+    removals -= staged_names
+    removals.discard(UPDATER_EXE_NAME)
+    removals.discard(UPDATE_LOCK_NAME)
     transaction = Path(tempfile.mkdtemp(prefix=".tc-updater-", dir=str(_transaction_root())))
     _journal_write(transaction, {"status": "started", "version": version})
     try:
