@@ -5,7 +5,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-PKG = Path("D:/Projetos/TurboCore/release/generated/20260907_007/package")
+PKG = Path("D:/Projetos/TurboCore/release/generated/20260907_008/package")
 EXE = Path("D:/Projetos/TurboCore/updater/bin/TurboCoreUpdater.exe")
 
 target = Path(tempfile.mkdtemp(prefix="tc-e2e-"))
@@ -26,7 +26,7 @@ tail = log.read_text(encoding="utf-8").splitlines()[-4:]
 print("\n".join(tail))
 
 version = json.loads((target / "build-info.json").read_text())["version"]
-assert version == "20260907_008", version
+assert version == "20260907_009", version
 assert (target / "TurboCore.exe").read_bytes() != b"corrompido"
 assert (target / "_internal" / "assets" / "chip.ico").is_file()
 assert (target / "_internal" / "assets" / "appwin.png").is_file()
