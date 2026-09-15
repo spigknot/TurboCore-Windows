@@ -65,7 +65,7 @@ powershell.exe -NoProfile -Command "Get-Process TurboCore,TurboCoreUpdater -Erro
 ```bash
 C:/Users/Gustavo/AppData/Local/Programs/Python/Python311/python.exe scripts/tc_release.py bump --version YYYYMMDD_NNN
 C:/Users/Gustavo/AppData/Local/Programs/Python/Python311/python.exe scripts/tc_release.py preflight
-# esperado: "115 passed" (o número cresce) + "PASS: preflight (pytest)"
+# esperado: "188 passed" (o número cresce) + "PASS: preflight (pytest)"
 ```
 
 O preflight roda primeiro um gate barato de sintaxe (`compileall` em
@@ -168,15 +168,16 @@ Se QUALQUER passo divergir, atualize este arquivo no mesmo commit da versão.
 | `build` recusa a versão | `release/generated/<v>/` já existe | nunca rodar 2x; apagar só se for refazer ANTES de publicar |
 | Botão de update fantasma no painel | `dist/` dev sem `build-info.json` (instalado=None < remoto) | `write_dev_build_info.py` em todo build dev |
 | `Permission denied` no lock (updater) | instalação sem `users-modify` (cópia manual) | reinstalar pelo setup; mensagem orienta (sem runas — igual ao SIG) |
-| Console preta piscando (app) | `subprocess` sem `CREATE_NO_WINDOW` | flag em todo spawn (power.py, cpu_info.py, pdh.py) |
-| Monitor zerado/viciado | `ProcessorFrequency` é o nominal fixo | ler `ActualFrequency` + `PercentIdleTime` (WMI) |
+| Console preta piscando (app) | `subprocess` sem `CREATE_NO_WINDOW` | flag em todo spawn (power.py; cpu_info/pdh não spawnam mais nada) |
+| Monitor zerado/viciado | `ProcessorFrequency` é o nominal fixo | PDH in-process: `Actual Frequency` + `% Idle Time` (pdh.dll, sem PowerShell/WMI) |
 | `RequestTimeTooSkewed` no sync | relógio do Windows dessincronizado (>15 min) | `powershell -c "Start-Service w32time; w32tm /resync"` (elevado); conferir `date -u` |
 | `SignatureDoesNotMatch` no sync | par S3 errado/antigo ou de outro bucket | gerar novo token S3 p/ `turbocore-windows`, trocar o par local; nunca usar token da API como credencial |
 | Tag da release aponta p/ commit anterior | `gh release create` antes do commit/push | ordem §5 antes de §6; se ocorrer: `git push origin +<COMMIT>:refs/tags/<VERSAO>` |
-| Painel travando | leitura WMI (~1s) na thread da UI | thread leitora + fila, UI só drena |
+| Painel travando / lista demora segundos | leitura na thread da UI (antes WMI ~2s; mesmo PDH ~1ms não pode bloquear) | thread leitora + fila, UI só drena; placeholder `lendo...` + 1º tick imediato |
 | Release parcial/draft no GitHub | assets junto do `create` + timeout | metadados primeiro, uploads separados |
 | `401/503` transitórios (R2/GitHub) | rede/API | repetir e conferir depois; nunca confiar em data, conferir SHA/nomes |
 | Diff gigante lento (~1 arq/s) | download serial de centenas de arquivos miúdos (tcl/tk) | normal em major; futuro: downloads paralelos no updater (o SIG usa ThreadPool x4) |
 | Update pelo painel esvaziou a instalação (1045 removidos p/ 3 aplicados) | `removals` do painel = manifesto inteiro, não órfãos | órfãos = `disco − manifesto` (+protegidos); guarda no `worker_apply_staged` ignora removals sobrepostas ao staged/updater/lock |
 | App não encerrou após update pelo painel (updater expirou PID, sem relançar) | teardown Tk chamado da thread de download (`after`/`event_generate` levantam `main thread is not in main loop` de forma racy) | worker só deposita `state["update_settle"]`; `tick()` (UI) executa via `poll_update_settle()`; watchdog 8s cobre painel fechado |
+| Janela demora segundos p/ abrir | `cpu_info` 2x PowerShell (~6,7 s) + `powercfg` inicial síncrono no `main` | topologia nativa (`GetLogicalProcessorInformation`, ~0,1 ms) + power inicial em background; `_WRITE_LOCK` serializa clique concorrente |
 | Dois updates simultâneos intercalam apply/rollback (instalação some) | `_recover_interrupted` rodava FORA do lock + duplo-clique sem trava | recover+transação DENTRO do `installation_lock` nos 3 workers (`transaction=None` p/ except/finally); `state["updating"]` ignora 2º clique; 2º updater falha limpo com "outra atualização em andamento" |

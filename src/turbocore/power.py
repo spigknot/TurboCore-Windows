@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+import threading
 
 from turbocore.core_calc import min_percent_for_one_thread, parse_powercfg_ac_hex, percent_for_cores
 
@@ -10,6 +11,13 @@ if os.name == "nt":
     _NO_WINDOW = {"creationflags": getattr(subprocess, "CREATE_NO_WINDOW", 0)}
 else:
     _NO_WINDOW = {}
+
+# Serializa as escritas no powercfg: o apply inicial do startup roda em thread
+# de fundo e um clique no Aplicar/tray pode concorrer com ele. Sem o lock, duas
+# sequências MIN->MAX->setactive intercaladas terminariam num estado indefinido
+# (ex.: o release inicial sobrescrevendo a escolha do usuário). Com o lock, a
+# segunda espera a primeira e o estado final é sempre o da última chamada.
+_WRITE_LOCK = threading.Lock()
 
 
 def _decode(data) -> str:
@@ -40,17 +48,19 @@ def apply_selection(chosen_cores: int, physical_cores: int, logical_count: int) 
     """
     min_pct = min_percent_for_one_thread(logical_count)
     max_pct = percent_for_cores(chosen_cores, physical_cores)
-    _setParking("CPMINCORES", min_pct)
-    _setParking("CPMAXCORES", max_pct)
-    _run(["powercfg", "-setactive", "scheme_current"])
+    with _WRITE_LOCK:
+        _setParking("CPMINCORES", min_pct)
+        _setParking("CPMAXCORES", max_pct)
+        _run(["powercfg", "-setactive", "scheme_current"])
     return (min_pct, max_pct)
 
 
 def release_all_cores() -> None:
     """Libera explicitamente tudo: MIN 100 + MAX 100 + setactive."""
-    _setParking("CPMINCORES", 100)
-    _setParking("CPMAXCORES", 100)
-    _run(["powercfg", "-setactive", "scheme_current"])
+    with _WRITE_LOCK:
+        _setParking("CPMINCORES", 100)
+        _setParking("CPMAXCORES", 100)
+        _run(["powercfg", "-setactive", "scheme_current"])
 
 
 def query_current_percent() -> int:

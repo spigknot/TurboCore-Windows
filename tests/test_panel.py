@@ -19,6 +19,17 @@ def test_painel_largura_da_slider():
     assert panel.PANEL_GEOMETRY == "300x720"
 
 
+def test_tick_rapido_ate_a_primeira_leitura():
+    """Vacina do painel sem lista: tick rápido antes do 1º dado, 1 s depois.
+
+    Sem isso a lista (mesmo com leitura em ~1 ms) só pintaria no tick
+    seguinte, 1 s depois de abrir.
+    """
+    assert panel.FIRST_PAINT_MS < panel.REFRESH_MS
+    assert panel.tick_delay(False) == panel.FIRST_PAINT_MS
+    assert panel.tick_delay(True) == panel.REFRESH_MS
+
+
 def test_slider_index_para_selecionado():
     options = [1, 2, 4, 6, 8, 10, 12, 14, 16, 18]
     assert panel.slider_index_for(options, 10) == 5

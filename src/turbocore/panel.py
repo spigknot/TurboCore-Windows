@@ -12,6 +12,7 @@ import time
 from pathlib import Path
 
 from turbocore import __version__, updater_client
+from turbocore import pdh as pdh_mod
 from turbocore.core_calc import build_core_options
 from turbocore.nodeslider import NodeSlider
 from turbocore.pdh import FreqMonitor, aggregate_cores, format_core_row
@@ -23,6 +24,14 @@ UPDATE_GREEN_DISABLED = "#7ea98a"
 UPDATE_FG_DISABLED = "#f1f4f2"
 UPDATE_LABEL = "Atualizar"
 REFRESH_MS = 1000
+# 1º paint: enquanto não existe leitura, o tick bate rápido (o PDH entrega em
+# ~1 ms) em vez de esperar 1 s; depois volta ao ritmo normal.
+FIRST_PAINT_MS = 100
+# Janela mínima da 1ª leitura: o contador é um delta desde a coleta anterior;
+# sem essa folga a 1ª amostra sairia de uma janela de ~1 ms (valor instável).
+MONITOR_SETTLE_S = 0.25
+# Após uma falha de leitura, recria a query neste intervalo (sem fallback).
+MONITOR_RETRY_S = 5.0
 # Largura justa: linha do slider (240px) + margens, e espaço para o label
 # centralizado conviver com o botão Atualizar à direita sem sobreposição.
 PANEL_GEOMETRY = "300x720"
@@ -85,6 +94,16 @@ def slider_index_for(options: list[int], selected: int | None) -> int:
 def needs_apply(preview: int, selected: int | None) -> bool:
     """Há comando a executar: preview difere do aplicado."""
     return preview != selected
+
+
+def tick_delay(has_stats: bool) -> int:
+    """Intervalo do próximo tick: rápido até a 1ª leitura, 1 s depois dela.
+
+    Vacina do painel sem lista por segundos: a lista abria vazia e só pintava
+    no tick seguinte ao da 1ª leitura (até +1 s além dos ~2,2 s da leitura
+    por PowerShell/WMI). Com leitura em ~1 ms, o gargalo passou a ser o tick.
+    """
+    return REFRESH_MS if has_stats else FIRST_PAINT_MS
 
 
 def apply_outcome(preview: int, selected: int | None,
@@ -391,6 +410,22 @@ def start_auto_check(state: dict, notify=None) -> None:
                     notify(version)
                 except Exception:
                     pass
+
+    threading.Thread(target=work, daemon=True).start()
+
+
+def start_monitor_prewarm() -> None:
+    """Paga o setup do PDH (~400 ms, 1x por processo) fora da abertura do painel.
+
+    Chamado no start do app — inclusive no boot silencioso da tray: quando o
+    painel abrir, a 1ª leitura já sai em ~1 ms em vez de carregar a dll do
+    provider de contadores naquele instante.
+    """
+    def work():
+        try:
+            pdh_mod.prewarm()
+        except Exception:
+            pass  # sem contadores o painel avisa no log quando for ler
 
     threading.Thread(target=work, daemon=True).start()
 
@@ -734,12 +769,21 @@ def open_panel(state: dict):
     update_button.configure(command=on_update_click)
 
     # Lista direta, sem caixa: um Label por núcleo, linhas centralizadas.
+    # Nascem com o placeholder: a lista NUNCA fica vazia esperando leitura
+    # (era o sintoma — painel aberto sem lista por segundos).
     core_labels: list = []
-    for _ in range(physical):
-        label = tk.Label(root, text="", font=("Consolas", 10), anchor="center")
+    for index in range(physical):
+        label = tk.Label(root, text=format_core_row(index, None),
+                         font=("Consolas", 10), anchor="center")
         label.pack(fill="x", padx=10)
         core_labels.append(label)
-    monitor = FreqMonitor(logical)
+    # O monitor nasce DENTRO da thread de leitura: o 1º setup do PDH carrega a
+    # dll do provider de contadores (~400 ms) e não pode travar a UI.
+    monitor_holder: dict = {"monitor": None}
+    monitor_error: dict = {"msg": None}
+    # Id do after do tick: cancelado no fechamento (sem isso o timer pendente
+    # dispara numa janela já destruída e o Tcl reclama de comando inexistente).
+    tick_after: dict = {"id": None}
 
     # Caixa de log (clone do activity log do SIG) ocupando o espaço restante.
     log_frame = tk.Frame(root)
@@ -810,19 +854,54 @@ def open_panel(state: dict):
     latest: dict = {"stats": None}
 
     def reader():
+        """Monitor PDH em thread de fundo: leitura ~1 ms, UI nunca bloqueia.
+
+        Sem fallback (decisão de projeto): uma falha de leitura não vira um
+        caminho lento escondido — a query é recriada, o erro fica em
+        monitor_error e o tick avisa no log do painel.
+        """
         while not stop_reader.is_set():
             try:
+                monitor = monitor_holder.get("monitor")
+                if monitor is None:
+                    monitor = monitor_holder["monitor"] = FreqMonitor(logical)
+                    # A 1ª leitura precisa de uma janela com algum tempo (o
+                    # contador é um delta); depois disso o ritmo é o refresh.
+                    if stop_reader.wait(MONITOR_SETTLE_S):
+                        return
                 stats = monitor.read()
-                try:
-                    stats_queue.get_nowait()
-                except queue_mod.Empty:
-                    pass
-                stats_queue.put(stats)
-            except Exception:
+            except Exception as exc:
+                monitor_error["msg"] = f"{type(exc).__name__}: {exc}"
+                monitor_holder["monitor"] = None
+                pdh_mod.reset()  # query quebrada não fica no processo
+                stop_reader.wait(MONITOR_RETRY_S)
+                continue
+            monitor_error["msg"] = None
+            try:
+                stats_queue.get_nowait()
+            except queue_mod.Empty:
                 pass
+            stats_queue.put(stats)
             stop_reader.wait(REFRESH_MS / 1000.0)
 
     threading.Thread(target=reader, daemon=True).start()
+
+    reported_error: dict = {"msg": None}
+
+    def report_monitor_failure() -> None:
+        """Falha/sucesso do monitor vira UMA linha no log (sem silêncio)."""
+        msg = monitor_error["msg"]
+        if msg == reported_error["msg"]:
+            return
+        previous = reported_error["msg"]
+        reported_error["msg"] = msg
+        try:
+            if msg is not None:
+                activity.append(f"Monitor: leitura falhou ({msg}).", "warning")
+            elif previous is not None:
+                activity.append("Monitor: leitura recuperada.", "vad_total")
+        except Exception:
+            pass
 
     def tick():
         try:
@@ -841,6 +920,7 @@ def open_panel(state: dict):
                 for index, mhz in enumerate(rows):
                     if index < len(core_labels):
                         core_labels[index].configure(text=format_core_row(index, mhz))
+            report_monitor_failure()
             pending = state.get("pending_update")
             if pending and not update_button.winfo_ismapped():
                 show_update(pending)
@@ -861,14 +941,23 @@ def open_panel(state: dict):
             pass
         finally:
             try:
-                root.after(REFRESH_MS, tick)
+                tick_after["id"] = root.after(tick_delay(latest["stats"] is not None),
+                                              tick)
             except Exception:
                 pass
 
     def on_close():
         try:
             stop_reader.set()
-            monitor.close()
+            if tick_after["id"] is not None:
+                try:
+                    root.after_cancel(tick_after["id"])
+                except Exception:
+                    pass
+                tick_after["id"] = None
+            monitor = monitor_holder.get("monitor")
+            if monitor is not None:
+                monitor.close()
         finally:
             state["panel"] = None
             try:
@@ -880,7 +969,8 @@ def open_panel(state: dict):
     pending = state.get("pending_update")
     if pending:
         show_update(pending)
-    root.after(REFRESH_MS, tick)
+    # after(0): o 1º tick já checa a fila (a leitura sai em ~1 ms, sem esperar 1 s).
+    root.after(0, tick)
     return root
 
 

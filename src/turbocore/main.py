@@ -32,6 +32,47 @@ def decide_panel_at_start(argv: list[str], migrated_boot: bool) -> tuple[bool, b
     return (post or not silent), post
 
 
+def start_initial_power(state: dict, action: str, cores: int | None,
+                        physical: int, logical: int) -> None:
+    """Aplica a decisão inicial (apply/release) em thread de fundo.
+
+    Vacina do startup lento: os 3 powercfg sequenciais (~200 ms, com picos de
+    1,2 s) bloqueavam a criação da janela. A UI abre primeiro; o estado do
+    sistema converge em seguida. O _WRITE_LOCK do power serializa com um
+    clique no Aplicar/tray concorrente: o estado final é sempre o da última
+    chamada. Falha vira aviso no stdout (mesmo comportamento de antes) e nunca
+    mata o app — e, se o painel já estiver aberto, uma linha no log.
+    """
+    def work():
+        try:
+            if action == "apply":
+                power.apply_selection(chosen_cores=cores, physical_cores=physical,
+                                      logical_count=logical)
+                state["selected"] = cores
+            else:
+                power.release_all_cores()
+        except RuntimeError as e:
+            # Sem privilegio p/ powercfg: abre o tray mesmo assim; usuario tenta de novo como admin.
+            print(f"[TurboCore] aviso: nao apliquei limite inicial: {e}")
+            _log_to_panel(state, f"Não apliquei o limite inicial: {e}")
+        except Exception as e:  # a thread nunca pode morrer em silêncio
+            print(f"[TurboCore] aviso: falha inesperada no limite inicial: {e}")
+            _log_to_panel(state, f"Falha no limite inicial: {e}")
+
+    threading.Thread(target=work, daemon=True).start()
+
+
+def _log_to_panel(state: dict, message: str) -> None:
+    """Aviso na caixa de log se o painel já existir; senão, só stdout."""
+    log = state.get("log")
+    if log is None:
+        return
+    try:
+        log.append(message, "warning")
+    except Exception:
+        pass
+
+
 def run_event_loop(state: dict, icon_fn, panel_fn, popup_fn=None,
                    poll_timeout: float = 0.2) -> None:
     """Tray numa thread, painel Tk na main thread. Sai quando o ícone parar.
@@ -78,17 +119,11 @@ def main(argv: list[str] | None = None) -> None:
     open_panel, post_update = decide_panel_at_start(list(argv), autostart.migrate())
     state["post_update"] = post_update
     action, cores = decide_initial_action(physical, cfg)
-    try:
-        if action == "apply":
-            power.apply_selection(chosen_cores=cores, physical_cores=physical,
-                                  logical_count=logical)
-            state["selected"] = cores
-        else:
-            power.release_all_cores()  # Lembrar=OFF (ou sem valor): libera explicitamente com 100
-    except RuntimeError as e:
-        # Sem privilegio p/ powercfg: abre o tray mesmo assim; usuario tenta de novo como admin.
-        print(f"[TurboCore] aviso: nao apliquei limite inicial: {e}")
+    start_initial_power(state, action, cores, physical, logical)
     panel_mod.start_auto_check(state)
+    # Setup do PDH (~400 ms, 1x por processo) em thread de fundo: quando o
+    # painel abrir, a lista de núcleos pinta em ~1 ms (era ~3,3 s via WMI).
+    panel_mod.start_monitor_prewarm()
     if open_panel:
         state["panel_request"].set()
     run_event_loop(state,

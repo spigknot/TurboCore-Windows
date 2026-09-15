@@ -101,3 +101,43 @@ def test_sem_janela_console_no_query():
     with patch.object(power.subprocess, "run", side_effect=fake_run):
         assert power.query_current_percent() == 100
     assert seen.get("creationflags") == subprocess.CREATE_NO_WINDOW
+
+
+def test_escritas_concorrentes_serializam():
+    """Vacina da condição de corrida do startup: apply inicial em voo + clique
+    concorrente no Aplicar não podem intercalar MIN->MAX->setactive.
+
+    Sem o _WRITE_LOCK, as duas sequências se sobrepõem e o estado final é
+    indefinido (o release inicial pode sobrescrever a escolha do usuário).
+    """
+    import threading
+    import time
+    active = 0
+    peak = 0
+    guard = threading.Lock()
+
+    def fake_run(cmd, **kw):
+        nonlocal active, peak
+        with guard:
+            active += 1
+            peak = max(peak, active)
+        try:
+            time.sleep(0.1)
+        finally:
+            with guard:
+                active -= 1
+        m = MagicMock()
+        m.returncode = 0
+        m.stdout = b""
+        m.stderr = b""
+        return m
+
+    with patch.object(power.subprocess, "run", side_effect=fake_run):
+        workers = [threading.Thread(target=power.release_all_cores)
+                   for _ in range(2)]
+        for worker in workers:
+            worker.start()
+        for worker in workers:
+            worker.join(timeout=30)
+        assert not any(worker.is_alive() for worker in workers)
+    assert peak == 1, f"escritas no powercfg intercaladas (pico {peak})"
