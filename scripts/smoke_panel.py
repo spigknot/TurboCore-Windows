@@ -5,6 +5,7 @@ import time
 sys.path.insert(0, "D:/Projetos/TurboCore/src")
 
 from turbocore import panel
+from turbocore.clock_table import ClockTable
 from turbocore.nodeslider import NodeSlider
 
 state = {"physical": 18, "logical": 36,
@@ -45,6 +46,9 @@ def all_widgets(w):
 
 flat = list(all_widgets(root))
 assert not any(isinstance(w, tk.Listbox) for w in flat)
+tables = [w for w in flat if isinstance(w, ClockTable)]
+assert len(tables) == 1 and tables[0].cores == 18
+assert tables[0].winfo_width() == 250
 assert not any(isinstance(w, tk.Menubutton) for w in flat), "dropdown removido"
 assert not any(isinstance(w, tk.Menu) and w is not root.nametowidget(root.cget("menu"))
                for w in flat), "popup do dropdown removido"

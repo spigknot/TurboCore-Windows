@@ -4,9 +4,10 @@ setlocal
 cd /d "%~dp0"
 python -m pip install -r requirements.txt || exit /b 1
 python assets\generate_icon.py || exit /b 1
+python scripts\fetch_hardware_monitor.py || exit /b 1
 set PYTHONPATH=src
 python -m pytest tests\ -q || exit /b 1
 taskkill /f /im TurboCore.exe 2>nul
-python -m PyInstaller --noconfirm --clean --name TurboCore --windowed --icon assets\chip.ico --paths src --add-data "assets\chip.ico;assets" --add-data "assets\chip.png;assets" --add-data "assets\appwin.png;assets" src\turbocore\main.py || exit /b 1
+python -m PyInstaller --noconfirm --clean --name TurboCore --windowed --icon assets\chip.ico --paths src --hidden-import clr --collect-all pythonnet --collect-all clr_loader --add-data "assets\hardware-monitor;assets/hardware-monitor" --add-data "assets\chip.ico;assets" --add-data "assets\chip.png;assets" --add-data "assets\appwin.png;assets" src\turbocore\main.py || exit /b 1
 python scripts\write_dev_build_info.py || exit /b 1
 echo OK: dist\TurboCore\TurboCore.exe

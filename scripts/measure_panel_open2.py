@@ -21,6 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from turbocore import cpu_info
 from turbocore import panel as panel_mod
+from turbocore.clock_table import ClockTable
 
 LOAD = "--load" in sys.argv
 IMMEDIATE = "--immediate" in sys.argv
@@ -68,10 +69,10 @@ def main() -> None:
 
     def first_row_text():
         for widget in root.winfo_children():
-            if widget.winfo_class() == "Label":
-                text = widget.cget("text")
-                if isinstance(text, str) and text.startswith("Core") and "MHz" in text:
-                    return text
+            if isinstance(widget, ClockTable):
+                text = widget.itemcget(widget._rows[0][1], "text")
+                if text != "—":
+                    return f"Core 0: {text} MHz"
         return None
 
     def poll():

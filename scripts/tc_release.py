@@ -89,6 +89,8 @@ def build_package(version: str) -> pathlib.Path:
     """Build onedir + monta release/generated/<v>/package. Retorna o package."""
     validate_version(version)
     check_build_python()
+    from fetch_hardware_monitor import fetch
+    fetch()
     kill_app_processes()
     gen = ROOT / "release" / "generated" / version
     if gen.exists():
@@ -97,6 +99,9 @@ def build_package(version: str) -> pathlib.Path:
     cmd = [sys.executable, "-m", "PyInstaller", "--noconfirm", "--clean",
            "--name", "TurboCore", "--windowed", "--icon", "assets/chip.ico",
            "--paths", "src",
+           "--hidden-import", "clr", "--collect-all", "pythonnet",
+           "--collect-all", "clr_loader",
+           "--add-data", "assets/hardware-monitor;assets/hardware-monitor",
            "--add-data", "assets/chip.ico;assets",
            "--add-data", "assets/chip.png;assets",
            "--add-data", "assets/appwin.png;assets",

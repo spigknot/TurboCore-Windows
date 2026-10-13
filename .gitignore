@@ -8,6 +8,7 @@ build/
 .hermes/
 release/r2_config.json
 *.pem
+assets/hardware-monitor/*.dll
 release_*.log
 sync_*.log
 release/generated/

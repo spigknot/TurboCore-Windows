@@ -103,6 +103,16 @@ def run_event_loop(state: dict, icon_fn, panel_fn, popup_fn=None,
 def main(argv: list[str] | None = None) -> None:
     if argv is None:
         argv = sys.argv[1:]
+    if argv and argv[0] == "--clock-worker":
+        if len(argv) != 4:
+            raise SystemExit(2)
+        from turbocore.clock_broker import run_worker
+        run_worker(int(argv[1]), argv[2], int(argv[3]))
+        return
+    if len(argv) == 2 and argv[0] == "--clock-report":
+        from turbocore.hardware_clock import write_diagnostic_report
+        write_diagnostic_report(argv[1])
+        return
     physical = cpu_info.get_physical_cores()
     logical = cpu_info.get_logical_count()
     cfg = config.load_config()
@@ -121,15 +131,18 @@ def main(argv: list[str] | None = None) -> None:
     action, cores = decide_initial_action(physical, cfg)
     start_initial_power(state, action, cores, physical, logical)
     panel_mod.start_auto_check(state)
-    # Setup do PDH (~400 ms, 1x por processo) em thread de fundo: quando o
-    # painel abrir, a lista de núcleos pinta em ~1 ms (era ~3,3 s via WMI).
+    # Inicialização do monitor de hardware fora da thread da interface.
     panel_mod.start_monitor_prewarm()
     if open_panel:
         state["panel_request"].set()
-    run_event_loop(state,
-                   icon_fn=lambda: tray.run_tray(state, load_icon()),
-                   panel_fn=lambda: panel_mod.run_panel(state),
-                   popup_fn=lambda coords: tray.open_tray_popup(state, coords))
+    try:
+        run_event_loop(state,
+                       icon_fn=lambda: tray.run_tray(state, load_icon()),
+                       panel_fn=lambda: panel_mod.run_panel(state),
+                       popup_fn=lambda coords: tray.open_tray_popup(state, coords))
+    finally:
+        from turbocore.hardware_clock import reset
+        reset()
 
 
 if __name__ == "__main__":

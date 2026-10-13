@@ -19,6 +19,35 @@ App de bandeja (tray) para limitar os núcleos da CPU em tempo real via `powercf
 Duplo clique em `dist\TurboCore\TurboCore.exe` → ícone do chip na bandeja → botão-direito.
 De baixo para cima: `Sair`, `Iniciar no boot`, `Lembrar escolha`, núcleos.
 
+O painel mostra a tabela de relógio ativo, com barras de clock, MHz e
+multiplicador por núcleo físico, seguindo a janela de referência do HWiNFO.
+O TurboCore lê os sensores diretamente pela biblioteca LibreHardwareMonitor
+0.9.6 e pelo driver [PawnIO](https://pawnio.eu), sem usar o aplicativo HWiNFO.
+Para essa leitura, o PawnIO deve estar instalado. O TurboCore pode ser aberto
+normalmente: ao abrir o painel, inicia um leitor separado com a permissão de
+administrador necessária ao driver, mantendo a interface e a bandeja sem
+elevação. A confirmação depende da política de UAC do Windows. O boot silencioso
+não solicita essa permissão; o leitor começa apenas ao abrir o painel.
+Se a permissão for cancelada, reabra o painel para tentar novamente.
+Sem acesso ao hardware, as células mostram `—` e o log
+explica a falha; não há substituição por estimativas PDH.
+
+Clique em qualquer ponto da tabela para alternar entre relógio ativo (barras
+amarelas) e relógio efetivo (barras verdes). Outro clique volta ao modo anterior.
+Os dois modos mantêm as colunas e a mesma escala de barras, sem título, contorno
+ou botão de fechar internos.
+
+O relógio ativo vem da medição do clock base e dos multiplicadores de hardware.
+No Xeon/Intel com suporte APERF/MPERF, o relógio efetivo usa a diferença dos
+contadores de ciclos realmente executados durante o intervalo completo,
+incluindo o tempo ocioso. A primeira amostra apenas estabelece o início do
+intervalo; a leitura efetiva aparece na amostra seguinte. O modo ativo continua
+funcionando se um modelo não oferecer os contadores efetivos suportados.
+Leituras de programas distintos podem variar por calibração e instante de
+amostragem. As barras usam uma escala comum que mantém o maior clock observado,
+arredondado para cima em passos de 100 MHz. O fechamento usa o botão da janela
+principal.
+
 ## Build
 
 ```
@@ -26,6 +55,8 @@ build_exe.bat
 ```
 
 Requer Python 3.11+ (gera `dist\TurboCore\TurboCore.exe`, sem janela de console).
+O build baixa as bibliotecas de hardware de uma versão fixa e verifica o SHA-256
+do pacote antes de incluí-las. Não instala drivers automaticamente.
 
 ## Desinstalar o boot
 
