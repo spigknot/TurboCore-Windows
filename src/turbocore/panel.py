@@ -31,12 +31,11 @@ FIRST_PAINT_MS = 100
 MONITOR_SETTLE_S = 0.25
 # Após uma falha de leitura, recria o monitor neste intervalo (sem fallback).
 MONITOR_RETRY_S = 5.0
-# Largura justa: linha do slider (240px) + margens, e espaço para o label
-# centralizado conviver com o botão Atualizar à direita sem sobreposição.
-PANEL_GEOMETRY = "300x720"
-# Raio do botão Aplicar (px): com padding simétrico o botão sai quadrado;
-# 21px + padding (4,4) ~= 36px de lado (+50% sobre os 24px originais).
-BOLT_PX = 21
+PANEL_WIDTH = ClockTable.WIDTH + 24
+PANEL_BACKGROUND = ClockTable.BACKGROUND
+PANEL_FONT = ClockTable.FONT
+LOG_HEIGHT = 98
+APPLY_SIZE = 32
 
 
 def sobre_texts() -> tuple[str, str, str]:
@@ -54,23 +53,26 @@ def sobre_artwork() -> Path | None:
 
 
 def create_apply_button(master, style_name: str, command):
-    """Botão Aplicar quadrado com ícone de raio (sem texto).
-
-    Extraído de open_panel para teste (a suíte só permite um Tk() por
-    processo). Fallback para texto se o PIL falhar. Padding simétrico do
-    estilo => largura == altura por construção.
-    """
+    """Botão de raio com superfícies suaves e estados de mouse/teclado."""
     from tkinter import ttk
+    style = ttk.Style(master)
+    style.layout(style_name, [("Button.label", {"sticky": "nswe"})])
+    style.configure(style_name, padding=0, background=PANEL_BACKGROUND,
+                    font=PANEL_FONT, anchor="center")
     try:
         from PIL import ImageTk
-        from turbocore.icons import bolt_image
-        photo = ImageTk.PhotoImage(bolt_image(BOLT_PX), master=master)
+        from turbocore.icons import apply_button_image
+        photos = {state: ImageTk.PhotoImage(apply_button_image(APPLY_SIZE, state),
+                                          master=master)
+                  for state in ("normal", "hover", "pressed", "focus")}
     except Exception:
-        photo = None
-    if photo is not None:
-        btn = ttk.Button(master, image=photo, text="", style=style_name,
-                         command=command)
-        btn.image = photo  # mantém referência (sem GC)
+        photos = None
+    if photos is not None:
+        btn = ttk.Button(master, image=(photos["normal"], "pressed", photos["pressed"],
+                                       "active", photos["hover"], "focus", photos["focus"]),
+                         text="", style=style_name, command=command, cursor="hand2")
+        btn.image = photos["normal"]
+        btn._state_images = photos
     else:
         btn = ttk.Button(master, text="Aplicar", style=style_name,
                          command=command)
@@ -660,8 +662,10 @@ def open_panel(state: dict):
     begin_panel_session()
 
     root = tk.Tk()
+    root.withdraw()
     root.title("TurboCore")
-    root.geometry(PANEL_GEOMETRY)
+    root.configure(background=PANEL_BACKGROUND)
+    root.option_add("*Font", PANEL_FONT)
     root.resizable(False, False)
     state["panel"] = root
     _window_icon(root)
@@ -674,15 +678,30 @@ def open_panel(state: dict):
     except Exception:
         pass
     style.configure("Update.TButton", foreground="#ffffff", background=UPDATE_GREEN,
-                    font=("Segoe UI Semibold", 10), padding=(12, 4))
+                    font=PANEL_FONT, padding=(6, 1), borderwidth=0)
     style.map("Update.TButton", background=[("active", UPDATE_GREEN_ACTIVE),
                                             ("disabled", UPDATE_GREEN_DISABLED)],
               foreground=[("disabled", UPDATE_FG_DISABLED)])
 
-    # Linha 1: "Cores: X" fixo no centro da tela + update verde à direita.
-    # Linha 2: slider centralizada. Linha 3: botão Aplicar compacto, centrado.
-    top = tk.Frame(root, height=34)
-    top.pack(fill="x", padx=10, pady=(10, 0))
+    # A barra interna permite usar a mesma fonte de 9 px da tabela; o menu
+    # nativo do Windows não respeita esse tamanho em todas as configurações.
+    toolbar = tk.Frame(root, height=20, background=PANEL_BACKGROUND)
+    toolbar.pack(fill="x", padx=12, pady=(6, 4))
+    toolbar.pack_propagate(False)
+    nav_style = dict(font=PANEL_FONT, background=PANEL_BACKGROUND,
+                     foreground="#46554b", activebackground="#e4eae5",
+                     activeforeground="#16833a", relief="flat", borderwidth=0,
+                     highlightthickness=0, padx=0, pady=2, cursor="hand2")
+    check_button = tk.Button(toolbar, text="Verificar Atualizações",
+                             command=lambda: on_check_click(), **nav_style)
+    check_button.pack(side="left")
+    tk.Button(toolbar, text="Sobre", command=lambda: open_sobre(root),
+              **nav_style).pack(side="right")
+    tk.Frame(root, height=1, background="#dce1dc").pack(
+        fill="x", padx=12, pady=(0, 6))
+
+    top = tk.Frame(root, height=22, background=PANEL_BACKGROUND)
+    top.pack(fill="x", padx=12, pady=(0, 2))
     top.pack_propagate(False)
 
     def apply_choice(n: int) -> None:
@@ -701,10 +720,10 @@ def open_panel(state: dict):
 
     options = build_core_options(physical)
     preview_var = tk.StringVar()
-    preview_label = tk.Label(top, textvariable=preview_var, font=("Segoe UI", 10))
-    # place() com âncora no centro do frame: o botão Atualizar (à direita)
-    # não desloca o texto — ele fica fixo no centro da tela.
-    preview_label.place(relx=0.5, rely=0.5, anchor="center")
+    preview_label = tk.Label(top, textvariable=preview_var, font=PANEL_FONT,
+                             background=PANEL_BACKGROUND, foreground="#263c2e",
+                             borderwidth=0, padx=0)
+    preview_label.place(relx=0, rely=0.5, anchor="w")
 
     def current_option() -> int:
         try:
@@ -721,11 +740,11 @@ def open_panel(state: dict):
         # aqui apenas reflete o preview e habilita/desabilita o Aplicar.
         refresh_aplicar()
 
-    slider_row = tk.Frame(root)
-    slider_row.pack(fill="x", pady=(2, 0))
-    scale = NodeSlider(slider_row, count=len(options), length=240,
+    slider_row = tk.Frame(root, background=PANEL_BACKGROUND)
+    slider_row.pack(fill="x", padx=12, pady=(0, 6))
+    scale = NodeSlider(slider_row, count=len(options), length=212,
                        command=on_scale)
-    scale.pack(anchor="center")
+    scale.pack(side="left")
     try:
         start_idx = slider_index_for(options, state.get("selected"))
         scale.set(start_idx)
@@ -733,14 +752,9 @@ def open_panel(state: dict):
     except Exception:
         pass
 
-    # Botão Aplicar: quadrado com ícone de raio (sem texto). Padding simétrico
-    # => largura == altura por construção (~36px de lado).
-    style.configure("Apply.TButton", padding=(4, 4))
-    aplicar_row = tk.Frame(root)
-    aplicar_row.pack(fill="x", pady=(2, 4))
-    aplicar_btn = create_apply_button(aplicar_row, "Apply.TButton",
+    aplicar_btn = create_apply_button(slider_row, "Apply.TButton",
                                       lambda: apply_choice(current_option()))
-    aplicar_btn.pack(anchor="center")
+    aplicar_btn.pack(side="right")
     refresh_aplicar()
 
     update_button = ttk.Button(top, text="", style="Update.TButton")
@@ -763,7 +777,7 @@ def open_panel(state: dict):
     update_button.configure(command=on_update_click)
 
     clock_table = ClockTable(root, physical)
-    clock_table.pack(anchor="center", pady=(4, 0))
+    clock_table.pack(anchor="center")
     # Inicialização do CLR e do driver sempre fora da thread da interface.
     monitor_holder: dict = {"monitor": None}
     monitor_error: dict = {"msg": None}
@@ -771,15 +785,21 @@ def open_panel(state: dict):
     # dispara numa janela já destruída e o Tcl reclama de comando inexistente).
     tick_after: dict = {"id": None}
 
-    # Caixa de log (clone do activity log do SIG) ocupando o espaço restante.
-    log_frame = tk.Frame(root)
-    log_frame.pack(fill="both", expand=True, padx=10, pady=(10, 8))
+    # Log com altura fixa (~66% menor) e rolagem, sem esticar a janela.
+    log_frame = tk.Frame(root, background=PANEL_BACKGROUND)
+    log_frame.pack(fill="x", padx=12, pady=(8, 10))
     tk.Label(log_frame, text="Log", anchor="w",
-             font=("Segoe UI Semibold", 9)).pack(anchor="w")
-    log_text = tk.Text(log_frame, wrap="none", state="disabled",
-                       font=("Consolas", 8), background="#ffffff",
-                       foreground="#33403e", relief="solid", borderwidth=1,
-                       padx=7, pady=7, height=6)
+             font=PANEL_FONT, foreground="#526057", background=PANEL_BACKGROUND,
+             padx=0).pack(anchor="w", pady=(0, 2))
+    log_well = tk.Frame(log_frame, height=LOG_HEIGHT, width=ClockTable.WIDTH,
+                        background=PANEL_BACKGROUND)
+    log_well.pack(fill="x")
+    log_well.pack_propagate(False)
+    log_text = tk.Text(log_well, wrap="word", state="disabled",
+                       font=PANEL_FONT, background="#ffffff",
+                       foreground="#33403e", relief="flat", borderwidth=0,
+                       highlightthickness=1, highlightbackground="#d4dcd5",
+                       highlightcolor="#9eafa2", padx=7, pady=5)
     log_text.pack(fill="both", expand=True)
     activity = ActivityLog(root, log_text)
     state["log"] = activity
@@ -788,17 +808,11 @@ def open_panel(state: dict):
     if state.get("post_update"):
         activity.append(f"Atualizado para {__version__}.", "vad_total")
 
-    # Barra superior (espelha o menu do SIG): Verificar Atualizações + Sobre.
-    menubar = tk.Menu(root, tearoff=0)
-    menubar.add_command(label="Verificar Atualizações", command=lambda: on_check_click())
-    menubar.add_command(label="Sobre", command=lambda: open_sobre(root))
-    root.config(menu=menubar)
     checker = ManualCheck()
 
     def set_check_enabled(enabled: bool) -> None:
         try:
-            menubar.entryconfigure("Verificar Atualizações",
-                                   state="normal" if enabled else "disabled")
+            check_button.configure(state="normal" if enabled else "disabled")
         except Exception:
             pass
 
@@ -966,6 +980,10 @@ def open_panel(state: dict):
     pending = state.get("pending_update")
     if pending:
         show_update(pending)
+    # A altura vem do conteúdo: menos núcleos => janela mais baixa.
+    root.update_idletasks()
+    root.geometry(f"{PANEL_WIDTH}x{root.winfo_reqheight()}")
+    root.deiconify()
     # Primeiro tick imediato para verificar a fila de leitura.
     root.after(0, tick)
     return root

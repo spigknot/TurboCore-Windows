@@ -67,13 +67,10 @@ def load_icon() -> Image.Image:
     return Image.new("RGB", (TRAY_SIZE, TRAY_SIZE), _FALLBACK_COLOR)
 
 
-# Raio do botão Aplicar: desenhado grande (supersample) e reduzido com
-# LANCZOS para bordas suaves mesmo em 14-16px. Amarelo âmbar + contorno
-# escuro: legível sobre o cinza-claro do tema clam.
-BOLT_FILL = (255, 195, 0, 255)
-BOLT_OUTLINE = (122, 82, 0, 255)
-_BOLT_POINTS = ((0.60, 0.05), (0.30, 0.55), (0.47, 0.55),
-                (0.40, 0.95), (0.72, 0.45), (0.54, 0.45))
+# Ícone âmbar preenchido, com bordas suaves no tamanho final.
+BOLT_FILL = (222, 158, 22, 255)
+_BOLT_POINTS = ((0.60, 0.06), (0.23, 0.55), (0.46, 0.55),
+                (0.38, 0.94), (0.77, 0.41), (0.54, 0.41))
 
 
 def bolt_image(size_px: int = 16, supersample: int = 4) -> Image.Image:
@@ -84,7 +81,29 @@ def bolt_image(size_px: int = 16, supersample: int = 4) -> Image.Image:
     draw = ImageDraw.Draw(img)
     pts = [(x * big, y * big) for x, y in _BOLT_POINTS]
     draw.polygon(pts, fill=BOLT_FILL)
-    draw.polygon(pts, outline=BOLT_OUTLINE, width=max(big // 32, 2))
     if (big, big) != (size_px, size_px):
         img = img.resize((size_px, size_px), Image.LANCZOS)
     return img
+
+
+def apply_button_image(size_px: int = 32, state: str = "normal") -> Image.Image:
+    """Botão arredondado com raio, renderizado a 4× para evitar serrilhado."""
+    from PIL import ImageDraw
+    scale = 4
+    size = size_px * scale
+    img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(img)
+    fill, border = {
+        "normal": ("#fafcfa", "#cbd3cc"),
+        "hover": ("#fff9e9", "#d7ba74"),
+        "pressed": ("#f5ecd2", "#c6a65b"),
+        "focus": ("#fafcfa", "#16833a"),
+    }.get(state, ("#fafcfa", "#cbd3cc"))
+    draw.rounded_rectangle((scale, 2 * scale, size - scale, size - scale),
+                           radius=8 * scale, fill="#dfe3df")
+    draw.rounded_rectangle((scale, scale, size - scale, size - 2 * scale),
+                           radius=8 * scale, fill=fill, outline=border, width=scale)
+    bolt = bolt_image(20 * scale, supersample=1)
+    offset = (size - bolt.width) // 2
+    img.alpha_composite(bolt, (offset, offset - scale // 2))
+    return img.resize((size_px, size_px), Image.Resampling.LANCZOS)

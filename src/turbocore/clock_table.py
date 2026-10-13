@@ -35,6 +35,7 @@ class ClockTable(tk.Canvas):
     ROW_HEIGHT = 14
     FIRST_ROW = 23
     BACKGROUND = "#f0f0f0"
+    FONT = ("Tahoma", -9)
 
     def __init__(self, master, cores: int):
         self.cores = cores
@@ -47,7 +48,7 @@ class ClockTable(tk.Canvas):
         self._effective = None
         self._maximum = 100
         self.bind("<Button-1>", self.toggle_mode)
-        self._font = ("Tahoma", -9)
+        self._font = self.FONT
         for x, title, anchor in ((21, "Core", "center"),
                                  (86, "Relógio", "center"),
                                  (166, "MHz", "center"),

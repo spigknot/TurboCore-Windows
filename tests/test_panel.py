@@ -15,8 +15,8 @@ def test_botao_update_clones_sig():
 
 
 def test_painel_largura_da_slider():
-    # Estreito: linha do slider (240px) + margens, sem folga de 513.
-    assert panel.PANEL_GEOMETRY == "300x720"
+    # A tabela ocupa 250 px, com apenas 12 px de margem de cada lado.
+    assert panel.PANEL_WIDTH == 274
 
 
 def test_tick_rapido_ate_a_primeira_leitura():
@@ -353,7 +353,7 @@ def test_bolt_image_nitido_e_quadrado():
 
 
 def test_aplicar_botao_raio_quadrado(tk_root):
-    """Botão Aplicar: ícone de raio, sem texto, quadrado, ~36px de lado."""
+    """Botão Aplicar: ícone de raio, sem texto, quadrado e compacto."""
     import tkinter as tk
     from tkinter import ttk
     ttk.Style(tk_root).configure("Apply.TButton", padding=(4, 4))
@@ -363,7 +363,7 @@ def test_aplicar_botao_raio_quadrado(tk_root):
     assert str(btn.cget("image")) != "", "sem imagem de raio"
     w, h = btn.winfo_reqwidth(), btn.winfo_reqheight()
     assert w == h, (w, h)
-    assert 32 <= h <= 40, h  # +50% sobre os 24px originais
+    assert 32 <= h <= 40, h
     parent.destroy()
 
 

@@ -34,21 +34,21 @@ def test_popup_checks_espelham_state():
 
 def test_popup_33_por_cento_mais_estreito():
     assert w32.popup_width(300, 100) == 201
-    assert w32.popup_width(150, 100) == 132  # piso: texto + check + respiro
+    assert w32.popup_width(150, 100) == 142  # piso: texto + check + respiro
 
 
 def test_popup_piso_nunca_clipa_texto():
-    assert w32.popup_width(100, 200) == 232
+    assert w32.popup_width(100, 200) == 242
 
 
 def test_popup_piso_cabe_lembrar_escolha(tk_root):
     """Vacina do print: 'Lembrar escolha' clipava ('Lembrar escol...')."""
     import tkinter.font as tkfont
-    font = tkfont.Font(font=("Segoe UI", 10))
+    font = tkfont.Font(font=("Segoe UI", 9))
     longest = font.measure("Lembrar escolha")
     width = w32.popup_width(w32.natural_width(longest), longest)
     assert width >= longest + w32.CHECK_COL_PX + w32.POPUP_TEXT_PAD
-    assert width - (longest + w32.CHECK_COL_PX) <= 12, width  # sem exagero
+    assert width - (longest + w32.CHECK_COL_PX) <= w32.POPUP_TEXT_PAD, width
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="popup Tk no Windows")
@@ -73,21 +73,21 @@ def test_popup_check_coluna_fixa_texto_nao_desloca(tk_root):
 
 @pytest.mark.skipif(sys.platform != "win32", reason="popup Tk no Windows")
 def test_popup_sem_faixa_cinza(tk_root):
-    """Corpo e linhas brancos, altura exata (borda + linhas + separadores)."""
+    """Corpo e linhas usam a paleta moderna e altura compacta exata."""
     state = _state()
     items = [it for it in w32.popup_items(state) if not it.get("sep")]
     win, rows = w32._build_popup_window(tk_root, items, coords=(500, 500))
     try:
         win.update_idletasks()
         assert str(win.cget("background")).lower() == w32.MENU_BORDER.lower()
-        assert str(win._tc_body.cget("background")).lower() == "#ffffff"
+        assert str(win._tc_body.cget("background")).lower() == w32.ROW_BG
         esperado = (len(rows) * w32.ROW_H
-                    + (len(rows) - 1) * w32.MENU_SEP_H
+                    + len(win._tc_seps) * (w32.MENU_SEP_H + w32.MENU_SECTION_GAP)
                     + w32.MENU_BORDER_PX * 2)
         assert win.winfo_reqheight() == esperado
         for f, c, t, _it in rows:
             for w in (f, c, t):
-                assert str(w.cget("background")).lower() == "#ffffff"
+                assert str(w.cget("background")).lower() == w32.ROW_BG
     finally:
         win.destroy()
 
@@ -113,14 +113,14 @@ def test_popup_contorno_menu(tk_root):
 
 @pytest.mark.skipif(sys.platform != "win32", reason="popup Tk no Windows")
 def test_popup_separador_fino_entre_cada_item(tk_root):
-    """Um traço fino (MENU_SEP, altura MENU_SEP_H) entre cada par de itens."""
+    """Traços finos separam os grupos sem poluir cada opção."""
     state = _state()
     items = [it for it in w32.popup_items(state) if not it.get("sep")]
     win, rows = w32._build_popup_window(tk_root, items, coords=(500, 500))
     try:
         win.update_idletasks()
         seps = win._tc_seps
-        assert len(seps) == len(rows) - 1
+        assert len(seps) == 2
         for s in seps:
             assert str(s.cget("background")).lower() == w32.MENU_SEP.lower()
             assert int(s.cget("height")) == w32.MENU_SEP_H
@@ -131,7 +131,7 @@ def test_popup_separador_fino_entre_cada_item(tk_root):
 
 @pytest.mark.skipif(sys.platform != "win32", reason="popup Tk no Windows")
 def test_popup_hover_sombreia_linha(tk_root):
-    """Enter sombreia a linha inteira; Leave (fora dela) restaura o branco."""
+    """Hover destaca a linha inteira e Leave restaura a superfície do menu."""
     state = _state()
     items = [it for it in w32.popup_items(state) if not it.get("sep")]
     win, rows = w32._build_popup_window(tk_root, items, coords=(500, 500))
@@ -147,8 +147,8 @@ def test_popup_hover_sombreia_linha(tk_root):
         assert str(f.cget("background")).lower() == w32.ROW_HOVER_BG.lower()
         f.event_generate("<Leave>")
         tk_root.update()
-        assert str(t.cget("background")).lower() == "#ffffff"
-        assert str(f.cget("background")).lower() == "#ffffff"
+        assert str(t.cget("background")).lower() == w32.ROW_BG
+        assert str(f.cget("background")).lower() == w32.ROW_BG
     finally:
         win.destroy()
 
@@ -186,7 +186,7 @@ def test_show_popup_centralizado_e_estreito(tk_root):
             win.destroy()
         tk_root.after(800, auto)
         w32.show_popup(state, coords=(500, 500))
-        font = tkfont.Font(font=("Segoe UI", 10))
+        font = tkfont.Font(font=("Segoe UI", 9))
         medida["longest"] = max(font.measure(t) for t in medida["texts"])
     finally:
         tk.Toplevel = real_toplevel

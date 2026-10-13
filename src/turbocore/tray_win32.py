@@ -7,22 +7,21 @@ Fallback: pystray (ver tray.run_tray).
 """
 from __future__ import annotations
 
-# Largura do popup = 67% da largura natural (33% mais estreito). O piso é
-# estrutural: texto mais longo + coluna do check + respiro à direita — o
-# texto ("Lembrar escolha") nunca clipa, sem folga exagerada.
+# Menu compacto com a mesma tipografia do painel.
 POPUP_RATIO = 0.67
-POPUP_TEXT_PAD = 8
+POPUP_TEXT_PAD = 14
 CHECK = "✓"
 # Coluna de check com largura FIXA (px): o texto nunca se desloca, com ou sem ✓.
-CHECK_COL_PX = 24
-ROW_H = 24
-ROW_BG = "#ffffff"
-ROW_HOVER_BG = "#e5f1fb"
-# Contorno do menu como um todo (borda de 1px ao redor do popup) + traço
-# fino separando cada item.
-MENU_BORDER = "#9e9e9e"
-MENU_SEP = "#e0e0e0"
+CHECK_COL_PX = 28
+ROW_H = 28
+ROW_BG = "#f7f9fc"
+ROW_HOVER_BG = "#e8f1fc"
+ROW_FG = "#172334"
+CHECK_FG = "#16834a"
+MENU_BORDER = "#cbd5e1"
+MENU_SEP = "#dce4ee"
 MENU_SEP_H = 1
+MENU_SECTION_GAP = 5
 MENU_BORDER_PX = 1
 
 
@@ -80,15 +79,23 @@ def _build_popup_window(owner, items, coords=None):
     import tkinter as tk
     import tkinter.font as tkfont
 
-    font = ("Segoe UI", 10)
+    font = ("Segoe UI", 9)
     labels = [it["label"] for it in items]
     try:
         longest = max(tkfont.Font(font=font).measure(t) for t in labels)
     except Exception:
         longest = max(len(t) for t in labels) * 8
     width = popup_width(natural_width(longest), longest)
+    # Os separadores visuais aparecem apenas nas fronteiras dos grupos
+    # existentes no menu: painel | núcleos | preferências e saída.
+    section_before = [
+        idx for idx, item in enumerate(items)
+        if (isinstance(item.get("key"), tuple) and item["key"][0] == "core"
+            and idx > 0 and items[idx - 1].get("key") == "panel")
+        or item.get("key") == "remember"
+    ]
     total_h = (len(labels) * ROW_H
-               + max(len(labels) - 1, 0) * MENU_SEP_H
+               + len(section_before) * (MENU_SEP_H + MENU_SECTION_GAP)
                + MENU_BORDER_PX * 2)
     if coords:
         x, y = int(coords[0]) - width // 2, int(coords[1]) - total_h - 8
@@ -106,7 +113,10 @@ def _build_popup_window(owner, items, coords=None):
     rows = []
     seps = []
     for idx, item in enumerate(items):
-        if idx > 0:
+        if idx in section_before:
+            gap = tk.Frame(body, background=ROW_BG, height=MENU_SECTION_GAP)
+            gap.pack(fill="x")
+            gap.pack_propagate(False)
             sep = tk.Frame(body, background=MENU_SEP, height=MENU_SEP_H)
             sep.pack(fill="x")
             sep.pack_propagate(False)
@@ -118,10 +128,11 @@ def _build_popup_window(owner, items, coords=None):
         frame.grid_columnconfigure(0, minsize=CHECK_COL_PX)
         frame.grid_columnconfigure(1, weight=1)
         check = tk.Label(frame, text=CHECK if item["checked"] else "",
-                         anchor="center", font=font, background=ROW_BG)
+                         anchor="center", font=("Segoe UI", 9, "bold"),
+                         foreground=CHECK_FG, background=ROW_BG)
         check.grid(row=0, column=0, sticky="ns")
         text = tk.Label(frame, text=item["label"], anchor="center", font=font,
-                        background=ROW_BG)
+                        foreground=ROW_FG, background=ROW_BG)
         text.grid(row=0, column=1, sticky="nsew")
 
         def hover_on(_event, f=frame, c=check, t=text):

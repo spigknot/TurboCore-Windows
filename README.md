@@ -37,6 +37,11 @@ amarelas) e relógio efetivo (barras verdes). Outro clique volta ao modo anterio
 Os dois modos mantêm as colunas e a mesma escala de barras, sem título, contorno
 ou botão de fechar internos.
 
+O painel usa a mesma fonte Tahoma de 9 pixels da tabela, incluindo o log.
+A janela tem 274 pixels de largura e ajusta a altura ao número de núcleos;
+o log ocupa 98 pixels e permite rolar as mensagens. O slider verde mantém
+as posições discretas, com o botão de raio ao lado e bordas suavizadas.
+
 O relógio ativo vem da medição do clock base e dos multiplicadores de hardware.
 No Xeon/Intel com suporte APERF/MPERF, o relógio efetivo usa a diferença dos
 contadores de ciclos realmente executados durante o intervalo completo,

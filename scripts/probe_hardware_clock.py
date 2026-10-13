@@ -39,6 +39,7 @@ try:
             from PIL import ImageGrab
             table = next(w for w in root.winfo_children() if isinstance(w, ClockTable))
             report["visible_mhz"] = [table.itemcget(row[1], "text") for row in table._rows]
+            report["panel_size"] = [root.winfo_width(), root.winfo_height()]
             x, y = root.winfo_rootx(), root.winfo_rooty()
             ImageGrab.grab(bbox=(x, y, x + root.winfo_width(),
                                 y + root.winfo_height())).save(args.capture)
@@ -52,6 +53,11 @@ try:
             report["effective_visible_mhz"] = [table.itemcget(row[1], "text")
                                                 for row in table._rows]
             assert any(value != "—" for value in report["effective_visible_mhz"])
+            px, py = root.winfo_rootx(), root.winfo_rooty()
+            capture_path = Path(args.capture)
+            ImageGrab.grab(bbox=(px, py, px + root.winfo_width(),
+                                py + root.winfo_height())).save(
+                capture_path.with_name(capture_path.stem + "-effective" + capture_path.suffix))
             ImageGrab.grab(bbox=(x, y, x + table.winfo_width(),
                                 y + table.winfo_height())).save(
                 Path(args.capture).with_name("hardware-clock-effective-live.png"))

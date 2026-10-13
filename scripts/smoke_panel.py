@@ -50,8 +50,6 @@ tables = [w for w in flat if isinstance(w, ClockTable)]
 assert len(tables) == 1 and tables[0].cores == 18
 assert tables[0].winfo_width() == 250
 assert not any(isinstance(w, tk.Menubutton) for w in flat), "dropdown removido"
-assert not any(isinstance(w, tk.Menu) and w is not root.nametowidget(root.cget("menu"))
-               for w in flat), "popup do dropdown removido"
 scales = [w for w in flat if isinstance(w, NodeSlider)]
 assert len(scales) == 1, "slider de nós único"
 assert not any(isinstance(w, ttk.Scale) for w in flat), "ttk.Scale antigo removido"
@@ -72,8 +70,10 @@ root.update()
 logbox = next(w for w in flat if isinstance(w, tk.Text))
 logcontent = logbox.get("1.0", "end")
 assert "Núcleos ativos já é 10." in logcontent, logcontent
-# geometria estreita (justa para a linha do slider)
-assert root.geometry().startswith("300x720"), root.geometry()
+# A altura acompanha o conteúdo; o log é limitado a 98 px.
+assert root.winfo_width() == panel.PANEL_WIDTH, root.geometry()
+assert root.winfo_height() < 520, root.geometry()
+assert logbox.winfo_height() == panel.LOG_HEIGHT, logbox.winfo_height()
 # Caixa de log presente e registrada no state (fluxo do update).
 assert any(isinstance(w, tk.Text) for w in flat), "caixa de log ausente"
 assert state.get("log") is not None
@@ -81,13 +81,14 @@ panel.open_sobre(root)
 root.update()
 sWin = [w for w in root.winfo_children() if w.winfo_class() == "Toplevel"]
 assert sWin and sWin[0].title() == "Sobre", [w.winfo_class() for w in root.winfo_children()]
-# menubar do painel + wallpaper no canvas do Sobre
-menu = root.nametowidget(root.cget("menu"))
-labels_mb = [menu.entrycget(i, "label") for i in range(menu.index("end") + 1)]
-assert labels_mb == ["Verificar Atualizações", "Sobre"], labels_mb
+# Ações da barra compacta + wallpaper no canvas do Sobre.
+nav = [w.cget("text") for w in flat if isinstance(w, tk.Button)]
+assert nav == ["Verificar Atualizações", "Sobre"], nav
 canvas = next(w for w in sWin[0].winfo_children() if w.winfo_class() == "Canvas")
 assert "image" in canvas.find_all() or canvas.find_all(), "wallpaper ausente no Sobre"
 sWin[0].destroy()
-root.destroy()
+root.event_generate("<<ClosePanel>>")
+from turbocore import hardware_clock
+hardware_clock.reset()
 state["panel"] = None
 print("SMOKE_PANEL_OK")

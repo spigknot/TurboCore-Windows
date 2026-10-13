@@ -1,7 +1,7 @@
-"""Slider de nós (discreta): traço fino + um nó cinza por opção + bolinha azul.
+"""Slider discreto com trilho verde, marcações e desenho antialias.
 
 Substitui o ttk.Scale no painel: as únicas posições possíveis são os nós, e a
-bolinha azul é atraída pelo nó mais próximo enquanto o usuário arrasta
+seleção é atraída pelo nó mais próximo enquanto o usuário arrasta
 (comportamento "magnético"), em vez de deslizar fluida.
 
 A API imita o ttk.Scale que ela substitui — get()/set()/command — para o
@@ -17,17 +17,17 @@ from __future__ import annotations
 import tkinter as tk
 
 # Geometria e cores do desenho.
-SLIDER_HEIGHT = 26      # altura do canvas (traço + bolinhas)
-LINE_WIDTH = 2          # espessura do traço horizontal
-NODE_RADIUS = 4         # raio do nó cinza
-THUMB_RADIUS = 7        # raio da bolinha azul (maior: fica sobre o nó)
-EDGE_PAD = THUMB_RADIUS + 2   # folga para a bolinha não ser cortada nas pontas
+SLIDER_HEIGHT = 28
+LINE_WIDTH = 3
+NODE_RADIUS = 1.5
+THUMB_RADIUS = 7
+EDGE_PAD = THUMB_RADIUS + 3
 
-LINE_COLOR = "#c8cdd2"
-NODE_COLOR = "#9aa4ad"
-NODE_ACTIVE_COLOR = "#5b6672"   # nó já aplicado (à esquerda da seleção)
-THUMB_COLOR = "#1f6feb"
-THUMB_OUTLINE = "#1553b8"
+LINE_COLOR = "#d5ddd6"
+NODE_COLOR = "#a2afa5"
+NODE_ACTIVE_COLOR = "#f0f7f2"
+THUMB_COLOR = "#ffffff"
+THUMB_OUTLINE = "#16833a"
 
 
 def node_positions(count: int, width: int, pad: int = EDGE_PAD) -> list[float]:
@@ -54,7 +54,7 @@ def nearest_index(x: float, positions: list[float]) -> int:
 
 
 class NodeSlider(tk.Canvas):
-    """Canvas com traço, nós e bolinha azul arrastável com snap por nó."""
+    """Trilho desenhado a 4×, com mouse e teclado limitados às opções válidas."""
 
     def __init__(self, master, count: int, length: int = 240, command=None,
                  **kwargs):
@@ -62,16 +62,26 @@ class NodeSlider(tk.Canvas):
         kwargs.setdefault("width", length)
         kwargs.setdefault("highlightthickness", 0)
         kwargs.setdefault("bd", 0)
+        kwargs.setdefault("takefocus", True)
+        kwargs.setdefault("cursor", "hand2")
         super().__init__(master, **kwargs)
         self.configure(bg=master.cget("bg"))
         self._count = max(int(count), 1)
         self._command = command
         self._index = 0
         self._applied = None
+        self._hover = self._focused = self._dragging = False
+        self._photo = None
+        self._image_item = self.create_image(0, 0, anchor="nw")
         self._positions: list[float] = []
         self.bind("<Configure>", self._on_configure)
         self.bind("<Button-1>", self._on_press)
         self.bind("<B1-Motion>", self._on_drag)
+        self.bind("<ButtonRelease-1>", self._on_release)
+        self.bind("<Enter>", lambda e: self._feedback("_hover", True))
+        self.bind("<Leave>", lambda e: self._feedback("_hover", False))
+        self.bind("<FocusIn>", lambda e: self._feedback("_focused", True))
+        self.bind("<FocusOut>", lambda e: self._feedback("_focused", False))
         self.bind("<Left>", self._on_key_left)
         self.bind("<Right>", self._on_key_right)
         self.bind("<Home>", lambda e: self._select(0, fire=True))
@@ -109,25 +119,52 @@ class NodeSlider(tk.Canvas):
         self._relayout()
 
     def _redraw(self) -> None:
-        self.delete("all")
+        from PIL import Image, ImageDraw, ImageTk
         if not self._positions:
             return
+        scale = 4
+        width = max(self.winfo_width(), int(self.cget("width")), 1)
+        background = tuple(v // 257 for v in self.winfo_rgb(self.cget("bg")))
+        img = Image.new("RGB", (width * scale, SLIDER_HEIGHT * scale), background)
+        draw = ImageDraw.Draw(img)
+
+        def circle(x, y, radius, fill, outline=None, stroke=1):
+            draw.ellipse(((x - radius) * scale, (y - radius) * scale,
+                          (x + radius) * scale, (y + radius) * scale),
+                         fill=fill, outline=outline, width=round(stroke * scale))
+
         mid = SLIDER_HEIGHT / 2.0
         first, last = self._positions[0], self._positions[-1]
-        self.create_line(first, mid, last, mid, fill=LINE_COLOR,
-                         width=LINE_WIDTH, capstyle="round")
+        tx = self._positions[self._index]
+        draw.rounded_rectangle((first * scale, (mid - LINE_WIDTH / 2) * scale,
+                                last * scale, (mid + LINE_WIDTH / 2) * scale),
+                               radius=LINE_WIDTH * scale / 2, fill=LINE_COLOR)
+        if tx > first:
+            draw.rounded_rectangle((first * scale, (mid - LINE_WIDTH / 2) * scale,
+                                    tx * scale, (mid + LINE_WIDTH / 2) * scale),
+                                   radius=LINE_WIDTH * scale / 2, fill=THUMB_OUTLINE)
         for i, px in enumerate(self._positions):
             if i == self._index:
-                continue                      # a bolinha azul cobre este nó
-            color = (NODE_ACTIVE_COLOR if self._applied is not None
-                     and i <= self._applied else NODE_COLOR)
-            self.create_oval(px - NODE_RADIUS, mid - NODE_RADIUS,
-                             px + NODE_RADIUS, mid + NODE_RADIUS,
-                             fill=color, outline="")
-        tx = self._positions[self._index]
-        self.create_oval(tx - THUMB_RADIUS, mid - THUMB_RADIUS,
-                         tx + THUMB_RADIUS, mid + THUMB_RADIUS,
-                         fill=THUMB_COLOR, outline=THUMB_OUTLINE, width=1)
+                continue
+            circle(px, mid, NODE_RADIUS,
+                   NODE_ACTIVE_COLOR if i < self._index else NODE_COLOR)
+        if self._applied is not None and self._applied != self._index:
+            applied = max(0, min(self._applied, self._count - 1))
+            circle(self._positions[applied], mid + 9, 1.5, THUMB_OUTLINE)
+        if self._hover or self._focused:
+            circle(tx, mid, THUMB_RADIUS + 3, "#dcebe0")
+        circle(tx, mid + .75, THUMB_RADIUS, "#bdcbbf")
+        circle(tx, mid, THUMB_RADIUS,
+               THUMB_OUTLINE if self._dragging else THUMB_COLOR,
+               THUMB_OUTLINE, 1.5)
+        circle(tx, mid, 2, "#ffffff" if self._dragging else THUMB_OUTLINE)
+        img = img.resize((width, SLIDER_HEIGHT), Image.Resampling.LANCZOS)
+        self._photo = ImageTk.PhotoImage(img, master=self)
+        self.itemconfigure(self._image_item, image=self._photo)
+
+    def _feedback(self, attribute: str, value: bool) -> None:
+        setattr(self, attribute, value)
+        self._redraw()
 
     # -- interação --------------------------------------------------------
     def _select(self, index: int, fire: bool) -> None:
@@ -142,11 +179,16 @@ class NodeSlider(tk.Canvas):
         return nearest_index(float(x), self._positions)
 
     def _on_press(self, event) -> None:
+        self._dragging = True
         self.focus_set()
         self._select(self._index_at(event.x), fire=True)
 
     def _on_drag(self, event) -> None:
         self._select(self._index_at(event.x), fire=True)
+
+    def _on_release(self, _event) -> None:
+        self._dragging = False
+        self._redraw()
 
     def _on_key_left(self, _event) -> str:
         self._select(self._index - 1, fire=True)
