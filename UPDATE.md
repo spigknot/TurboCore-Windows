@@ -65,7 +65,7 @@ powershell.exe -NoProfile -Command "Get-Process TurboCore,TurboCoreUpdater -Erro
 ```bash
 C:/Users/Gustavo/AppData/Local/Programs/Python/Python311/python.exe scripts/tc_release.py bump --version YYYYMMDD_NNN
 C:/Users/Gustavo/AppData/Local/Programs/Python/Python311/python.exe scripts/tc_release.py preflight
-# esperado: "188 passed" (o número cresce) + "PASS: preflight (pytest)"
+# esperado: suíte aprovada + "PASS: preflight (pytest)"
 ```
 
 O preflight roda primeiro um gate barato de sintaxe (`compileall` em
@@ -139,8 +139,12 @@ C:/Users/Gustavo/AppData/Local/Programs/Python/Python311/python.exe scripts/e2e_
 # esperado: download do R2, "Atualização aplicada e validada", E2E_UPDATE_OK
 ```
 
-O script instala a v1 corrompida num dir temp, atualiza pelo updater congelado
-e limpa tudo (inclui matar o tray de verificação).
+O script lê a versão do código, confere-a com o manifesto assinado do R2 e usa
+`release/generated/<versão>/package` como base para um diretório temporário.
+Marca a instalação como antiga, corrompe o executável e remove os assets para
+forçar o updater congelado a repará-los. O teste valida a versão e os arquivos
+restaurados e, inclusive em caso de falha, encerra apenas o TurboCore iniciado
+para esse diretório e remove os arquivos temporários.
 
 ## 8. Entrega (relatório final obrigatório)
 
